@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REST Data Loader - Advanced Web GUI</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <h1 class="app-title">REST Data Loader</h1>
+            <div class="top-controls">
+                <select id="configSelector" class="config-selector">
+                    <option value="">No Configuration</option>
+                </select>
+                <button id="manageConfigsBtn" class="btn btn-secondary">Manage</button>
+                <button id="loadOpenApiBtn" class="btn btn-primary">Load OpenAPI</button>
+                <button id="autonomousLoaderBtn" class="btn btn-primary">Autonomous Loader</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel: Configuration & Endpoints -->
+            <div class="left-panel">
+                <!-- Configuration Panel -->
+                <div class="panel config-panel">
+                    <h2>Configuration</h2>
+                    <div class="form-group">
+                        <label for="baseUrl">Base URL:</label>
+                        <div class="input-group">
+                            <input type="text" id="baseUrl" placeholder="http://localhost:8000" class="input">
+                            <button id="updateUrlBtn" class="btn btn-small">Update</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="authToken">Auth Token:</label>
+                        <div class="input-group">
+                            <input type="password" id="authToken" placeholder="Enter token..." class="input">
+                            <button id="setTokenBtn" class="btn btn-small">Set</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Endpoints Panel -->
+                <div class="panel endpoints-panel">
+                    <div class="panel-header">
+                        <h2>Endpoints</h2>
+                        <input type="text" id="endpointSearch" placeholder="Search endpoints..." class="search-input">
+                    </div>
+                    <div id="endpointsList" class="endpoints-list">
+                        <div class="empty-state">No endpoints loaded. Load an OpenAPI specification to get started.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Endpoint Details & Response -->
+            <div class="right-panel">
+                <!-- Endpoint Details Panel -->
+                <div id="endpointDetails" class="panel endpoint-details-panel" style="display: none;">
+                    <h2 id="endpointPath" class="endpoint-path"></h2>
+                    <div class="method-selector">
+                        <label>Method:</label>
+                        <select id="methodSelect" class="method-select"></select>
+                    </div>
+                    
+                    <!-- Requirements Section -->
+                    <div id="requirementsSection" class="requirements-section"></div>
+                    
+                    <!-- Parameters Section -->
+                    <div id="parametersSection" class="parameters-section"></div>
+                    
+                    <!-- Request Body Section -->
+                    <div id="requestBodySection" class="request-body-section"></div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="action-buttons">
+                        <button id="loadJsonBtn" class="btn btn-secondary">Load JSON</button>
+                        <button id="generateExampleBtn" class="btn btn-secondary">Generate Example</button>
+                        <button id="sendRequestBtn" class="btn btn-success">Send Request</button>
+                    </div>
+                </div>
+
+                <!-- Response Panel -->
+                <div class="panel response-panel">
+                    <h2>Response</h2>
+                    <div id="responseStatus" class="response-status">Status: -</div>
+                    <div id="responseInfo" class="response-info"></div>
+                    <div id="responseBody" class="response-body">
+                        <div class="empty-state">No response yet. Make a request to see results.</div>
+                    </div>
+                    <button id="copyResponseBtn" class="btn btn-secondary">Copy Response</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="manageConfigsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Configurations</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <button id="addConfigBtn" class="btn btn-primary">Add Configuration</button>
+                <div id="configsList" class="configs-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="addConfigModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Configuration</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Name:</label>
+                    <input type="text" id="newConfigName" class="input" placeholder="Configuration name">
+                </div>
+                <div class="form-group">
+                    <label>Base URL:</label>
+                    <input type="text" id="newConfigUrl" class="input" placeholder="http://localhost:8000">
+                </div>
+                <div class="form-group">
+                    <label>OpenAPI Spec File (optional):</label>
+                    <div class="file-input-group">
+                        <input type="text" id="newConfigSpec" class="input" placeholder="No file selected" readonly>
+                        <input type="file" id="newConfigSpecFile" accept=".yaml,.yml,.json" style="display: none;">
+                        <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('newConfigSpecFile').click()">Browse</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Auth Token (optional):</label>
+                    <input type="password" id="newConfigToken" class="input" placeholder="Enter token">
+                </div>
+                <button id="saveConfigBtn" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadOpenApiModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Load OpenAPI Specification</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>OpenAPI Specification File:</label>
+                    <div class="file-input-group">
+                        <input type="text" id="openApiPath" class="input" placeholder="No file selected" readonly>
+                        <input type="file" id="openApiFile" accept=".yaml,.yml,.json" style="display: none;">
+                        <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('openApiFile').click()">Browse</button>
+                    </div>
+                </div>
+                <button id="loadOpenApiFileBtn" class="btn btn-primary">Load</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="autonomousLoaderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Autonomous Loader</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Task File:</label>
+                    <div class="file-input-group">
+                        <input type="text" id="taskFilePath" class="input" placeholder="No file selected" readonly>
+                        <input type="file" id="taskFile" accept=".json" style="display: none;">
+                        <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('taskFile').click()">Browse</button>
+                    </div>
+                </div>
+                <button id="executeTasksBtn" class="btn btn-success">Execute Tasks</button>
+                <div id="taskResults" class="task-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

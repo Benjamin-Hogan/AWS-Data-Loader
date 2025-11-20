@@ -1,0 +1,12 @@
+{
+  "configs": [
+    {
+      "name": "Mock API",
+      "base_url": "http://localhost:8000",
+      "openapi_spec_path": "mock_openapi.yaml",
+      "auth_token": null
+    }
+  ],
+  "active_config": "Mock API"
+}
+

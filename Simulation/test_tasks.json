@@ -1,0 +1,106 @@
+{
+  "tasks": [
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/health",
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/users",
+      "params": {
+        "limit": 10,
+        "offset": 0
+      },
+      "delay_before": 1.0,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/users",
+      "params": {
+        "limit": 5,
+        "offset": 0,
+        "search": "John"
+      },
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/users/1",
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "POST",
+      "path": "/api/users",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\": \"Test User\", \"email\": \"test@example.com\", \"age\": 28}",
+      "delay_before": 1.0,
+      "delay_after": 1.0
+    },
+    {
+      "config_name": "Mock API",
+      "method": "PUT",
+      "path": "/api/users/1",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\": \"Updated Name\", \"age\": 31}",
+      "delay_before": 1.0,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/posts",
+      "params": {
+        "limit": 10
+      },
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "POST",
+      "path": "/api/posts",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"title\": \"Test Post\", \"content\": \"This is a test post\", \"author_id\": 1}",
+      "delay_before": 1.0,
+      "delay_after": 1.0
+    },
+    {
+      "config_name": "Mock API",
+      "method": "POST",
+      "path": "/api/data",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"key\": \"value\", \"timestamp\": \"2024-01-01T00:00:00Z\"}",
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "Mock API",
+      "method": "GET",
+      "path": "/api/echo",
+      "params": {
+        "test": "value"
+      },
+      "delay_before": 0.5,
+      "delay_after": 0.5
+    }
+  ]
+}
+
