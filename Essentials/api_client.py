@@ -3,11 +3,17 @@ REST API Client for making HTTP requests.
 Handles authentication, request formatting, and response processing.
 """
 
-import requests
-from typing import Dict, Any, Optional
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import http.client
 import json
+import time
+import urllib.parse
+from typing import Dict, Any, Optional
+from urllib.parse import urlparse
+
+
+class RequestException(Exception):
+    """Exception raised for request errors."""
+    pass
 
 
 class APIClient:
@@ -23,24 +29,27 @@ class APIClient:
         """
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
-        self.session = requests.Session()
         
-        # Configure retry strategy
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+        # Parse base URL to extract scheme, hostname, port, and base path
+        parsed = urlparse(self.base_url)
+        self.scheme = parsed.scheme
+        self.hostname = parsed.hostname
+        self.port = parsed.port or (443 if self.scheme == 'https' else 80)
+        self.base_path = parsed.path.rstrip('/')  # Base path from URL (e.g., '/v1')
+        
+        # Retry configuration
+        self.retry_total = 3
+        self.retry_backoff_factor = 1
+        self.retry_status_codes = [429, 500, 502, 503, 504]
         
         # Default headers
-        self.session.headers.update({
+        self.default_headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
-        })
+        }
+        
+        # Session headers (for auth and custom headers)
+        self.session_headers: Dict[str, str] = {}
         
     def set_auth_token(self, token: str, auth_type: str = 'Bearer'):
         """
@@ -50,7 +59,7 @@ class APIClient:
             token: Authentication token
             auth_type: Type of authentication (Bearer, Token, etc.)
         """
-        self.session.headers['Authorization'] = f'{auth_type} {token}'
+        self.session_headers['Authorization'] = f'{auth_type} {token}'
         
     def set_headers(self, headers: Dict[str, str]):
         """
@@ -59,8 +68,81 @@ class APIClient:
         Args:
             headers: Dictionary of header key-value pairs
         """
-        self.session.headers.update(headers)
+        self.session_headers.update(headers)
         
+    def _create_connection(self) -> http.client.HTTPConnection:
+        """Create an HTTP or HTTPS connection based on the scheme."""
+        if self.scheme == 'https':
+            return http.client.HTTPSConnection(self.hostname, self.port, timeout=self.timeout)
+        else:
+            return http.client.HTTPConnection(self.hostname, self.port, timeout=self.timeout)
+    
+    def _build_path(self, path: str, params: Optional[Dict[str, Any]] = None) -> str:
+        """Build the full path with base path and query parameters."""
+        # Ensure path starts with /
+        if not path.startswith('/'):
+            path = '/' + path
+        
+        # Combine base path with endpoint path
+        full_path = self.base_path + path
+        
+        # Add query parameters if provided
+        if params:
+            query_string = urllib.parse.urlencode(params)
+            return f"{full_path}?{query_string}"
+        return full_path
+    
+    def _make_single_request(
+        self,
+        method: str,
+        path: str,
+        headers: Dict[str, str],
+        body: Optional[bytes] = None
+    ) -> Dict[str, Any]:
+        """Make a single HTTP request without retry logic."""
+        conn = None
+        try:
+            conn = self._create_connection()
+            conn.request(method.upper(), path, body=body, headers=headers)
+            response = conn.getresponse()
+            
+            # Read response body
+            response_body = response.read()
+            response_text = response_body.decode('utf-8', errors='replace')
+            
+            # Get response headers
+            response_headers = {}
+            for header, value in response.getheaders():
+                response_headers[header.lower()] = value
+            
+            # Build full URL for result
+            full_url = f"{self.base_url}{path}"
+            
+            result = {
+                'status_code': response.status,
+                'headers': response_headers,
+                'url': full_url,
+                'method': method.upper(),
+                'body': response_text,
+                'json': None
+            }
+            
+            # Try to parse JSON response
+            try:
+                result['json'] = json.loads(response_text)
+            except (ValueError, json.JSONDecodeError):
+                pass
+            
+            return result
+            
+        except (ConnectionError, OSError, TimeoutError) as e:
+            raise RequestException(f"Failed to connect to {self.base_url}: {str(e)}")
+        except Exception as e:
+            raise RequestException(f"Request failed: {str(e)}")
+        finally:
+            if conn:
+                conn.close()
+    
     def make_request(
         self,
         method: str,
@@ -70,7 +152,7 @@ class APIClient:
         body: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Make an HTTP request.
+        Make an HTTP request with retry logic.
         
         Args:
             method: HTTP method (GET, POST, PUT, DELETE, etc.)
@@ -91,62 +173,62 @@ class APIClient:
             }
             
         Raises:
-            requests.RequestException: If the request fails
+            RequestException: If the request fails
         """
-        # Construct full URL
-        url = f"{self.base_url}{path}"
+        # Build full path with query parameters
+        full_path = self._build_path(path, params)
         
-        # Prepare headers
-        request_headers = self.session.headers.copy()
+        # Prepare headers (merge default, session, and request headers)
+        request_headers = self.default_headers.copy()
+        request_headers.update(self.session_headers)
         if headers:
             request_headers.update(headers)
-            
+        
         # Prepare body
-        json_data = None
+        body_bytes = None
         if body:
             try:
-                json_data = json.loads(body)
+                # Try to parse as JSON to validate
+                json.loads(body)
+                # If valid JSON, send as-is
+                body_bytes = body.encode('utf-8')
             except json.JSONDecodeError:
                 # If not valid JSON, send as raw string
                 request_headers['Content-Type'] = 'text/plain'
-                json_data = body
-                
-        # Make request
-        try:
-            response = self.session.request(
-                method=method.upper(),
-                url=url,
-                params=params,
-                headers=request_headers,
-                json=json_data if isinstance(json_data, dict) else None,
-                data=body if not isinstance(json_data, dict) else None,
-                timeout=self.timeout
-            )
-            
-            # Parse response
-            result = {
-                'status_code': response.status_code,
-                'headers': dict(response.headers),
-                'url': response.url,
-                'method': method.upper(),
-                'body': response.text,
-                'json': None
-            }
-            
-            # Try to parse JSON response
+                body_bytes = body.encode('utf-8')
+        
+        # Retry logic
+        last_exception = None
+        for attempt in range(self.retry_total):
             try:
-                result['json'] = response.json()
-            except (ValueError, json.JSONDecodeError):
-                pass
+                result = self._make_single_request(
+                    method, full_path, request_headers, body_bytes
+                )
                 
-            return result
-            
-        except requests.exceptions.Timeout:
-            raise requests.RequestException("Request timed out")
-        except requests.exceptions.ConnectionError:
-            raise requests.RequestException(f"Failed to connect to {self.base_url}")
-        except requests.exceptions.RequestException as e:
-            raise requests.RequestException(f"Request failed: {str(e)}")
+                # Check if we should retry based on status code
+                if result['status_code'] in self.retry_status_codes:
+                    if attempt < self.retry_total - 1:
+                        # Calculate backoff delay
+                        delay = self.retry_backoff_factor * (2 ** attempt)
+                        time.sleep(delay)
+                        continue
+                
+                # Success or non-retryable status code
+                return result
+                
+            except RequestException as e:
+                last_exception = e
+                if attempt < self.retry_total - 1:
+                    # Calculate backoff delay
+                    delay = self.retry_backoff_factor * (2 ** attempt)
+                    time.sleep(delay)
+                else:
+                    raise
+        
+        # If we get here, all retries failed
+        if last_exception:
+            raise last_exception
+        raise RequestException("Request failed after retries")
             
     def get(self, path: str, params: Optional[Dict[str, Any]] = None, 
             headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -171,6 +253,6 @@ class APIClient:
         return self.make_request('DELETE', path, params=params, headers=headers)
         
     def close(self):
-        """Close the session."""
-        self.session.close()
+        """Close the session (no-op for http.client, kept for compatibility)."""
+        pass
 
