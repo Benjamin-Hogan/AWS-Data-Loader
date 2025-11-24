@@ -5,6 +5,7 @@ Automatically executes API requests based on configuration files.
 
 import json
 import time
+import re
 from typing import Dict, Any, List, Optional, Callable
 from pathlib import Path
 from datetime import datetime
@@ -86,7 +87,8 @@ class AutonomousLoader:
         config_manager: APIConfigManager,
         on_progress: Optional[Callable[[str], None]] = None,
         on_complete: Optional[Callable[[List[RequestTask]], None]] = None,
-        on_error: Optional[Callable[[RequestTask, str], None]] = None
+        on_error: Optional[Callable[[RequestTask, str], None]] = None,
+        on_task_complete: Optional[Callable[[RequestTask, Dict[str, Any]], None]] = None
     ):
         """
         Initialize the autonomous loader.
@@ -96,14 +98,18 @@ class AutonomousLoader:
             on_progress: Callback for progress updates (receives message string)
             on_complete: Callback when all tasks complete (receives list of tasks)
             on_error: Callback for errors (receives task and error message)
+            on_task_complete: Callback when a task completes (receives task and result dict)
         """
         self.config_manager = config_manager
         self.on_progress = on_progress
         self.on_complete = on_complete
         self.on_error = on_error
+        self.on_task_complete = on_task_complete
         self.is_running = False
         self.tasks: List[RequestTask] = []
         self.results: List[Dict[str, Any]] = []
+        self.variables: Dict[str, Any] = {}  # Store variables for substitution
+        self.enable_variable_substitution = True  # Enable variable substitution
     
     def load_tasks_from_file(self, file_path: str) -> List[RequestTask]:
         """
@@ -208,9 +214,110 @@ class AutonomousLoader:
         self.tasks.clear()
         self.results.clear()
     
+    def _substitute_variables(self, value: Any) -> Any:
+        """
+        Substitute variables in a value.
+        Supports {{variable_name}} syntax and JSON path extraction {{task_index.response.json.path}}.
+        
+        Args:
+            value: Value to substitute (can be string, dict, list, etc.)
+            
+        Returns:
+            Value with variables substituted
+        """
+        if not self.enable_variable_substitution:
+            return value
+        
+        if isinstance(value, str):
+            # Find all variable references {{...}}
+            pattern = r'\{\{([^}]+)\}\}'
+            matches = re.findall(pattern, value)
+            
+            for match in matches:
+                var_expr = match.strip()
+                replacement = None
+                
+                # Handle JSON path extraction: {{task_index.response.json.path}}
+                if '.' in var_expr:
+                    parts = var_expr.split('.')
+                    if len(parts) >= 3 and parts[1] == 'response':
+                        try:
+                            task_idx = int(parts[0])
+                            if 0 <= task_idx < len(self.results):
+                                result = self.results[task_idx]
+                                if result.get('success') and 'response' in result:
+                                    response = result['response']
+                                    
+                                    # Navigate through the path
+                                    data = response
+                                    for part in parts[2:]:
+                                        if part == 'json' and 'json' in data:
+                                            data = data['json']
+                                        elif part == 'body' and 'body' in data:
+                                            data = data['body']
+                                        elif isinstance(data, dict):
+                                            data = data.get(part)
+                                        elif isinstance(data, list):
+                                            try:
+                                                data = data[int(part)]
+                                            except (ValueError, IndexError):
+                                                data = None
+                                        else:
+                                            data = None
+                                        
+                                        if data is None:
+                                            break
+                                    
+                                    replacement = str(data) if data is not None else ''
+                        except (ValueError, IndexError):
+                            pass
+                
+                # Handle simple variable: {{variable_name}}
+                if replacement is None and var_expr in self.variables:
+                    replacement = str(self.variables[var_expr])
+                
+                # Handle built-in variables
+                if replacement is None:
+                    if var_expr == 'timestamp':
+                        replacement = datetime.now().isoformat()
+                    elif var_expr == 'timestamp_unix':
+                        replacement = str(int(time.time()))
+                
+                # Replace the variable
+                if replacement is not None:
+                    value = value.replace(f'{{{{{var_expr}}}}}', replacement)
+                else:
+                    # Variable not found, leave as is or replace with empty string
+                    # Uncomment the next line to replace unknown variables with empty string
+                    # value = value.replace(f'{{{{{var_expr}}}}}', '')
+                    pass
+            
+            return value
+        
+        elif isinstance(value, dict):
+            return {k: self._substitute_variables(v) for k, v in value.items()}
+        
+        elif isinstance(value, list):
+            return [self._substitute_variables(item) for item in value]
+        
+        else:
+            return value
+    
+    def set_variable(self, name: str, value: Any):
+        """Set a variable for substitution."""
+        self.variables[name] = value
+    
+    def get_variable(self, name: str) -> Optional[Any]:
+        """Get a variable value."""
+        return self.variables.get(name)
+    
+    def clear_variables(self):
+        """Clear all variables."""
+        self.variables.clear()
+    
     def execute_task(self, task: RequestTask) -> Dict[str, Any]:
         """
-        Execute a single task.
+        Execute a single task with variable substitution.
         
         Args:
             task: RequestTask to execute
@@ -238,17 +345,49 @@ class AutonomousLoader:
             if task.delay_before > 0:
                 time.sleep(task.delay_before)
             
+            # Substitute variables in task properties
+            substituted_path = self._substitute_variables(task.path)
+            substituted_params = self._substitute_variables(task.params) if task.params else None
+            substituted_headers = self._substitute_variables(task.headers) if task.headers else None
+            substituted_body = self._substitute_variables(task.body) if task.body else None
+            
             # Make request
             response = config.api_client.make_request(
                 method=task.method,
-                path=task.path,
-                params=task.params,
-                headers=task.headers,
-                body=task.body
+                path=substituted_path,
+                params=substituted_params,
+                headers=substituted_headers,
+                body=substituted_body
             )
             
             task.result = response
             task.executed_at = datetime.now()
+            
+            # Extract response data for variable storage (if task has extract_vars)
+            # This allows storing response data for use in subsequent tasks
+            if hasattr(task, 'extract_vars') and task.extract_vars:
+                for var_name, json_path in task.extract_vars.items():
+                    try:
+                        # Navigate JSON path
+                        data = response.get('json', {})
+                        for part in json_path.split('.'):
+                            if isinstance(data, dict):
+                                data = data.get(part)
+                            elif isinstance(data, list):
+                                try:
+                                    data = data[int(part)]
+                                except (ValueError, IndexError):
+                                    data = None
+                            else:
+                                data = None
+                            
+                            if data is None:
+                                break
+                        
+                        if data is not None:
+                            self.set_variable(var_name, data)
+                    except Exception:
+                        pass
             
             # Delay after request
             if task.delay_after > 0:
@@ -262,6 +401,11 @@ class AutonomousLoader:
             }
             
             self.results.append(result)
+            
+            # Call task complete callback for streaming results
+            if self.on_task_complete:
+                self.on_task_complete(task, result)
+            
             return result
             
         except Exception as e:
@@ -280,6 +424,11 @@ class AutonomousLoader:
             }
             
             self.results.append(result)
+            
+            # Call task complete callback for streaming results
+            if self.on_task_complete:
+                self.on_task_complete(task, result)
+            
             return result
     
     def execute_all(self, stop_on_error: bool = False):

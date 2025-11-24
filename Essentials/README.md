@@ -184,6 +184,9 @@ Autonomous task execution with:
 - Progress callbacks
 - Error handling
 - Result saving
+- Variable substitution ({{variable_name}})
+- Response data extraction from previous tasks
+- Built-in variables (timestamp, timestamp_unix)
 
 ### `cli.py`
 Command-line interface for all operations.
@@ -207,7 +210,7 @@ Tasks are defined in JSON format:
       "config_name": "api1",
       "method": "POST",
       "path": "/api/users",
-      "body": "{\"name\": \"John\"}",
+      "body": "{\"name\": \"John\", \"timestamp\": \"{{timestamp}}\"}",
       "headers": {"Content-Type": "application/json"}
     },
     {
@@ -216,6 +219,15 @@ Tasks are defined in JSON format:
       "path": "/api/users",
       "body_file": "example_request.json",
       "headers": {"Content-Type": "application/json"}
+    },
+    {
+      "config_name": "api1",
+      "method": "GET",
+      "path": "/api/users/{{0.response.json.id}}",
+      "extract_vars": {
+        "user_id": "id",
+        "user_name": "name"
+      }
     }
   ]
 }
@@ -225,15 +237,48 @@ Tasks are defined in JSON format:
 
 - `config_name` (required): Name of the API configuration to use
 - `method` (required): HTTP method (GET, POST, PUT, DELETE, etc.)
-- `path` (required): API endpoint path
-- `params` (optional): Query parameters as a dictionary
-- `headers` (optional): Additional headers as a dictionary
-- `body` (optional): Request body as a JSON string (use this for inline JSON)
+- `path` (required): API endpoint path (supports variable substitution)
+- `params` (optional): Query parameters as a dictionary (supports variable substitution)
+- `headers` (optional): Additional headers as a dictionary (supports variable substitution)
+- `body` (optional): Request body as a JSON string (use this for inline JSON, supports variable substitution)
 - `body_file` (optional): Path to a JSON file containing the request body (resolved relative to the task file)
 - `delay_before` (optional): Delay in seconds before making the request (default: 0.0)
 - `delay_after` (optional): Delay in seconds after making the request (default: 0.0)
+- `extract_vars` (optional): Dictionary mapping variable names to JSON paths for extracting data from response
 
 **Note**: If both `body` and `body_file` are specified, `body_file` takes precedence. The `body_file` path is resolved relative to the task file's directory.
+
+### Variable Substitution
+
+The autonomous loader supports variable substitution using `{{variable_name}}` syntax:
+
+- **Simple variables**: `{{variable_name}}` - References a variable set via `set_variable()` or extracted from previous responses
+- **Response data**: `{{task_index.response.json.path}}` - Extracts data from a previous task's response
+  - Example: `{{0.response.json.id}}` gets the `id` field from the JSON response of the first task (index 0)
+  - Example: `{{1.response.json.data.items.0.name}}` navigates nested JSON structures
+- **Built-in variables**:
+  - `{{timestamp}}` - Current ISO timestamp
+  - `{{timestamp_unix}}` - Current Unix timestamp
+
+### Response Data Extraction
+
+Use the `extract_vars` field to automatically extract data from responses for use in subsequent tasks:
+
+```json
+{
+  "config_name": "api1",
+  "method": "POST",
+  "path": "/api/users",
+  "body": "{\"name\": \"John\"}",
+  "extract_vars": {
+    "user_id": "id",
+    "user_email": "email",
+    "created_at": "created_at"
+  }
+}
+```
+
+This extracts `id`, `email`, and `created_at` from the response JSON and makes them available as variables for subsequent tasks.
 
 ## Requirements
 

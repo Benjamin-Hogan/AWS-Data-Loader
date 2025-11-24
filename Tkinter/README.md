@@ -7,7 +7,10 @@ A basic Tkinter-based GUI for the REST Data Loader. This provides a simple, func
 - **Tabbed Interface**: Streamlined interface with tabs for different features
 - **API Testing Tab**: Main interface for testing endpoints
 - **Config Management Tab**: Manage multiple API configurations in-app
-- **Autonomous Loader Tab**: Execute batch requests without pop-ups
+- **Autonomous Loader Tab**: 
+  - Execute batch requests with real-time result streaming
+  - Task editor for creating and managing configurations
+  - Export results in JSON or text format
 - **Multiple API Configurations**: Manage multiple OpenAPI specifications
 - **Dynamic Endpoint Generation**: Automatically creates forms from OpenAPI specs
 - **Request/Response Viewer**: View formatted JSON responses
@@ -67,11 +70,57 @@ python main.py
 
 ### Autonomous Data Loading
 
-1. Click the "Autonomous Loader" tab or go to `Tools > Autonomous Data Loader`
-2. Select a task configuration file (JSON) using the Browse button
-3. Click "Execute Tasks"
-4. Monitor progress in the progress window
-5. Save results when complete (prompted automatically)
+The Autonomous Loader tab includes two sub-tabs:
+
+#### Task Editor Tab
+
+1. **Create/Edit Task Configurations**:
+   - Click "New Config" to create a new task configuration
+   - Use the config dropdown to switch between different configurations
+   - Add tasks using the "Add Task" button
+   - Edit tasks by selecting them from the list
+   - Reorder tasks using "Move Up" and "Move Down" buttons
+   - Remove tasks with "Remove Task"
+
+2. **Task Editor**:
+   - Select an API configuration from the dropdown
+   - Choose HTTP method (GET, POST, PUT, PATCH, DELETE)
+   - Enter the endpoint path
+   - Add query parameters (JSON format)
+   - Add headers (JSON format)
+   - Enter request body (JSON format) or load from file using "Load File" button
+   - Configure delays (before/after request)
+
+3. **Save/Load Configurations**:
+   - Click "Save Config" to save the current configuration to a JSON file
+   - Click "Load Config" to load a task configuration from a file
+   - Configurations are managed in-memory and can be switched between easily
+
+#### Execute Tasks Tab
+
+1. **Choose Task Source**:
+   - Select "Use Editor Config" to execute tasks from the editor
+   - Select "Load from File" to execute tasks from a JSON file
+   - Choose the configuration or file to use
+
+2. **Execution Options**:
+   - Enable "Stop on Error" to halt execution on first error
+   - Monitor progress in real-time with streaming results
+
+3. **Execute**:
+   - Click "Execute Tasks" to start execution
+   - View progress and results streamed in real-time to the progress window
+   - Each task result is displayed immediately with:
+     - Success/failure indicator (✓/✗)
+     - Status code and response preview
+     - Execution timestamp
+     - Error details (if failed)
+
+4. **Export Results**:
+   - **Export Results**: Export execution results in JSON or text format
+     - JSON format: Structured data with all response details
+     - Text format: Human-readable formatted report with full response bodies
+   - **Export Log**: Export the entire progress log as a text file
 
 **Note**: All features are now integrated into tabs within the main window - no more pop-up dialogs!
 

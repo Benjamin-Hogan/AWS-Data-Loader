@@ -8,14 +8,16 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from typing import Dict, Any, Optional
 import threading
 from pathlib import Path
+from datetime import datetime
 import sys
+import json
 
 # Add parent directory to path to import Essentials
 sys.path.insert(0, str(Path(__file__).parent.parent / 'Essentials'))
 
 from openapi_parser import OpenAPIParser
 from api_client import APIClient
-from gui_components import EndpointFrame, ConfigFrame, ResponseFrame
+from gui_components import EndpointFrame, ConfigFrame, ResponseFrame, TaskConfigEditor
 from api_config_manager import APIConfigManager, APIConfig
 from autonomous_loader import AutonomousLoader, RequestTask
 
@@ -319,25 +321,69 @@ class RESTDataLoaderApp:
         self.config_error_label.config(text="")
     
     def _create_autonomous_loader_tab(self):
-        """Create the Autonomous Loader tab."""
+        """Create the Autonomous Loader tab with integrated task editor."""
         loader_tab = ttk.Frame(self.notebook)
         self.notebook.add(loader_tab, text="Autonomous Loader")
         
+        # Create notebook for editor and execution
+        loader_notebook = ttk.Notebook(loader_tab)
+        loader_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Tab 1: Task Editor
+        editor_tab = ttk.Frame(loader_notebook)
+        loader_notebook.add(editor_tab, text="Task Editor")
+        
+        # Create task editor
+        def save_config_callback(config_name: str, config_data: Dict[str, Any]):
+            """Save task configuration to file."""
+            file_path = filedialog.asksaveasfilename(
+                title="Save Task Configuration",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialfile=f"{config_name}.json"
+            )
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, indent=2, ensure_ascii=False)
+                return file_path
+            return None
+        
+        self.task_editor = TaskConfigEditor(editor_tab, self.config_manager, save_config_callback)
+        self.task_editor.pack(fill=tk.BOTH, expand=True)
+        
+        # Tab 2: Execution
+        execution_tab = ttk.Frame(loader_notebook)
+        loader_notebook.add(execution_tab, text="Execute Tasks")
+        
         # Instructions
-        info_frame = ttk.LabelFrame(loader_tab, text="Instructions", padding=10)
+        info_frame = ttk.LabelFrame(execution_tab, text="Instructions", padding=10)
         info_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        info_text = """Load a task configuration file (JSON) to automatically execute API requests.
-The file should contain a 'tasks' array with request definitions."""
+        info_text = """Execute tasks from the editor or load a task configuration file (JSON).
+Tasks will be executed sequentially with the configured delays."""
         ttk.Label(info_frame, text=info_text, wraplength=650).pack()
         
-        # File selection
-        file_frame = ttk.Frame(loader_tab)
-        file_frame.pack(fill=tk.X, padx=10, pady=10)
+        # Execution options
+        options_frame = ttk.LabelFrame(execution_tab, text="Execution Options", padding=10)
+        options_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Source selection
+        source_frame = ttk.Frame(options_frame)
+        source_frame.pack(fill=tk.X, pady=5)
+        
+        self.task_source_var = tk.StringVar(value="editor")
+        ttk.Radiobutton(source_frame, text="Use Editor Config", variable=self.task_source_var, 
+                       value="editor").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(source_frame, text="Load from File", variable=self.task_source_var, 
+                       value="file").pack(side=tk.LEFT, padx=10)
+        
+        # File selection (for file source)
+        file_frame = ttk.Frame(options_frame)
+        file_frame.pack(fill=tk.X, pady=5)
         
         self.task_file_var = tk.StringVar()
         ttk.Label(file_frame, text="Task File:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(file_frame, textvariable=self.task_file_var, width=50).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Entry(file_frame, textvariable=self.task_file_var, width=50, state='readonly').pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(
             file_frame,
             text="Browse",
@@ -347,11 +393,30 @@ The file should contain a 'tasks' array with request definitions."""
             ))
         ).pack(side=tk.LEFT, padx=5)
         
+        # Editor config selector (for editor source)
+        editor_config_frame = ttk.Frame(options_frame)
+        editor_config_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(editor_config_frame, text="Editor Config:").pack(side=tk.LEFT, padx=5)
+        self.editor_config_selector_var = tk.StringVar()
+        self.editor_config_selector = ttk.Combobox(editor_config_frame, 
+                                                   textvariable=self.editor_config_selector_var,
+                                                   state="readonly", width=30)
+        self.editor_config_selector.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        # Execution options
+        options_inner_frame = ttk.Frame(options_frame)
+        options_inner_frame.pack(fill=tk.X, pady=5)
+        
+        self.stop_on_error_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_inner_frame, text="Stop on Error", 
+                       variable=self.stop_on_error_var).pack(side=tk.LEFT, padx=10)
+        
         # Progress
-        progress_frame = ttk.LabelFrame(loader_tab, text="Progress", padding=10)
+        progress_frame = ttk.LabelFrame(execution_tab, text="Progress", padding=10)
         progress_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.progress_text = tk.Text(progress_frame, height=20, wrap=tk.WORD)
+        self.progress_text = tk.Text(progress_frame, height=20, wrap=tk.WORD, font=("Consolas", 9))
         self.progress_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         progress_scrollbar = ttk.Scrollbar(progress_frame, orient="vertical", command=self.progress_text.yview)
@@ -359,7 +424,7 @@ The file should contain a 'tasks' array with request definitions."""
         self.progress_text.configure(yscrollcommand=progress_scrollbar.set)
         
         # Buttons
-        button_frame = ttk.Frame(loader_tab)
+        button_frame = ttk.Frame(execution_tab)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
         
         def update_progress(message):
@@ -367,33 +432,57 @@ The file should contain a 'tasks' array with request definitions."""
             self.progress_text.see(tk.END)
             self.root.update()
         
+        def on_task_complete(task, result):
+            """Stream individual task results to progress dialog."""
+            status_icon = "✓" if result['success'] else "✗"
+            status_code = ""
+            response_info = ""
+            
+            if result['success']:
+                response = result.get('response', {})
+                status_code = response.get('status_code', 'N/A')
+                response_info = f"Status: {status_code}"
+                
+                # Add response body preview if available
+                if 'json' in response:
+                    json_data = response['json']
+                    # Show a preview of the response
+                    try:
+                        preview = json.dumps(json_data, indent=2, ensure_ascii=False)
+                        if len(preview) > 200:
+                            preview = preview[:200] + "..."
+                        response_info += f"\nResponse: {preview}"
+                    except:
+                        pass
+                elif 'body' in response:
+                    body = response['body']
+                    if len(body) > 200:
+                        body = body[:200] + "..."
+                    response_info += f"\nResponse: {body}"
+            else:
+                error = result.get('error', 'Unknown error')
+                response_info = f"Error: {error}"
+            
+            update_progress(f"\n{status_icon} Task {task.method} {task.path}")
+            update_progress(f"  Config: {task.config_name}")
+            update_progress(f"  {response_info}")
+            update_progress(f"  Executed at: {result.get('executed_at', 'N/A')}")
+            update_progress("")
+        
         def on_complete(tasks):
-            update_progress(f"\n=== Execution Complete ===")
+            update_progress(f"\n{'='*60}")
+            update_progress(f"=== Execution Complete ===")
+            update_progress(f"{'='*60}")
             update_progress(f"Total tasks: {len(tasks)}")
             success_count = sum(1 for t in tasks if t.result and not t.error)
             update_progress(f"Successful: {success_count}")
             update_progress(f"Failed: {len(tasks) - success_count}")
-            
-            # Ask to save results
-            if messagebox.askyesno("Save Results", "Save execution results to file?"):
-                file_path = filedialog.asksaveasfilename(
-                    title="Save Results",
-                    defaultextension=".json",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-                )
-                if file_path and self.autonomous_loader:
-                    self.autonomous_loader.save_results(file_path)
-                    update_progress(f"Results saved to: {file_path}")
+            update_progress(f"{'='*60}\n")
         
         def on_error(task, error):
-            update_progress(f"ERROR: {task.config_name} - {task.method} {task.path}: {error}")
+            update_progress(f"✗ ERROR: {task.config_name} - {task.method} {task.path}: {error}")
         
         def execute_tasks():
-            task_file = self.task_file_var.get()
-            if not task_file:
-                update_progress("ERROR: Please select a task configuration file")
-                return
-            
             self.progress_text.delete(1.0, tk.END)
             update_progress("=== Starting Autonomous Data Loader ===\n")
             
@@ -403,28 +492,209 @@ The file should contain a 'tasks' array with request definitions."""
                     config_manager=self.config_manager,
                     on_progress=update_progress,
                     on_complete=on_complete,
-                    on_error=on_error
+                    on_error=on_error,
+                    on_task_complete=on_task_complete
                 )
                 
-                # Load tasks
-                update_progress(f"Loading tasks from: {task_file}")
-                tasks = self.autonomous_loader.load_tasks_from_file(task_file)
+                # Get tasks based on source
+                source = self.task_source_var.get()
+                tasks = []
+                
+                if source == "editor":
+                    # Get tasks from editor
+                    config_name = self.editor_config_selector_var.get()
+                    if not config_name:
+                        update_progress("ERROR: Please select a configuration from the editor")
+                        return
+                    
+                    config_data = self.task_editor.get_current_config_data()
+                    if not config_data:
+                        update_progress("ERROR: No tasks in selected configuration")
+                        return
+                    
+                    tasks_data = config_data.get('tasks', [])
+                    update_progress(f"Loading {len(tasks_data)} task(s) from editor config: {config_name}")
+                    
+                    # Convert to RequestTask objects
+                    for task_data in tasks_data:
+                        try:
+                            task = RequestTask.from_dict(task_data)
+                            tasks.append(task)
+                        except Exception as e:
+                            update_progress(f"WARNING: Failed to parse task: {e}")
+                            continue
+                
+                else:  # file source
+                    task_file = self.task_file_var.get()
+                    if not task_file:
+                        update_progress("ERROR: Please select a task configuration file")
+                        return
+                    
+                    update_progress(f"Loading tasks from: {task_file}")
+                    tasks = self.autonomous_loader.load_tasks_from_file(task_file)
+                
+                if not tasks:
+                    update_progress("ERROR: No tasks to execute")
+                    return
+                
                 self.autonomous_loader.add_tasks(tasks)
                 update_progress(f"Loaded {len(tasks)} task(s)\n")
                 
                 # Execute in separate thread to avoid blocking UI
                 def run_loader():
-                    self.autonomous_loader.execute_all()
+                    self.autonomous_loader.execute_all(stop_on_error=self.stop_on_error_var.get())
                 
                 thread = threading.Thread(target=run_loader, daemon=True)
                 thread.start()
                 
             except Exception as e:
                 update_progress(f"ERROR: Failed to execute tasks: {str(e)}")
+                import traceback
+                update_progress(traceback.format_exc())
+        
+        def refresh_editor_configs():
+            """Refresh editor config selector."""
+            if hasattr(self, 'task_editor'):
+                config_data = self.task_editor.get_current_config_data()
+                # Get all config names from editor
+                # We need to access the editor's internal configs
+                # For now, just update based on current selection
+                current_config = self.task_editor.current_config_name
+                if current_config:
+                    self.editor_config_selector_var.set(current_config)
+                    # Update dropdown values
+                    config_names = list(self.task_editor.task_configs.keys())
+                    self.editor_config_selector['values'] = config_names
+        
+        def switch_to_editor():
+            """Switch to editor tab and refresh."""
+            loader_notebook.select(0)
+            refresh_editor_configs()
+        
+        def export_results():
+            """Export results to file."""
+            if not hasattr(self, 'autonomous_loader') or not self.autonomous_loader:
+                messagebox.showwarning("No Results", "No execution results available to export")
+                return
+            
+            # Ask for export format
+            export_format = messagebox.askyesno(
+                "Export Format",
+                "Export as JSON?\n\nYes = JSON format\nNo = Text format"
+            )
+            
+            file_path = filedialog.asksaveasfilename(
+                title="Export Results",
+                defaultextension=".json" if export_format else ".txt",
+                filetypes=[
+                    ("JSON files", "*.json"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            try:
+                if export_format:
+                    # Export as JSON
+                    self.autonomous_loader.save_results(file_path)
+                    messagebox.showinfo("Export Complete", f"Results exported to:\n{file_path}")
+                else:
+                    # Export as formatted text
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write("=" * 80 + "\n")
+                        f.write("AUTONOMOUS LOADER EXECUTION RESULTS\n")
+                        f.write("=" * 80 + "\n\n")
+                        f.write(f"Executed at: {datetime.now().isoformat()}\n")
+                        f.write(f"Total tasks: {len(self.autonomous_loader.tasks)}\n\n")
+                        
+                        for idx, result in enumerate(self.autonomous_loader.results, 1):
+                            task = result['task']
+                            f.write("-" * 80 + "\n")
+                            f.write(f"Task {idx}: {task.method} {task.path}\n")
+                            f.write(f"Config: {task.config_name}\n")
+                            f.write(f"Executed at: {result.get('executed_at', 'N/A')}\n")
+                            
+                            if result['success']:
+                                response = result.get('response', {})
+                                status_code = response.get('status_code', 'N/A')
+                                f.write(f"Status: {status_code} ✓\n")
+                                
+                                # Write response body
+                                if 'json' in response:
+                                    f.write("\nResponse JSON:\n")
+                                    f.write(json.dumps(response['json'], indent=2, ensure_ascii=False))
+                                    f.write("\n")
+                                elif 'body' in response:
+                                    f.write("\nResponse Body:\n")
+                                    f.write(response['body'])
+                                    f.write("\n")
+                            else:
+                                f.write(f"Status: ERROR ✗\n")
+                                f.write(f"Error: {result.get('error', 'Unknown error')}\n")
+                            
+                            f.write("\n")
+                        
+                        f.write("=" * 80 + "\n")
+                        f.write("END OF RESULTS\n")
+                        f.write("=" * 80 + "\n")
+                    
+                    messagebox.showinfo("Export Complete", f"Results exported to:\n{file_path}")
+            except Exception as e:
+                messagebox.showerror("Export Error", f"Failed to export results:\n{str(e)}")
+        
+        def export_progress_text():
+            """Export current progress text to file."""
+            content = self.progress_text.get(1.0, tk.END)
+            if not content.strip():
+                messagebox.showwarning("No Content", "Progress dialog is empty")
+                return
+            
+            file_path = filedialog.asksaveasfilename(
+                title="Export Progress Log",
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            )
+            
+            if file_path:
+                try:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    messagebox.showinfo("Export Complete", f"Progress log exported to:\n{file_path}")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export:\n{str(e)}")
         
         ttk.Button(button_frame, text="Execute Tasks", command=execute_tasks).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Clear Progress", command=lambda: self.progress_text.delete(1.0, tk.END)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Results", command=export_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Log", command=export_progress_text).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Switch to Editor", command=switch_to_editor).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Switch to API Testing", command=lambda: self.notebook.select(0)).pack(side=tk.RIGHT, padx=5)
+        
+        # Update editor config selector when task source changes
+        def on_source_change(*args):
+            source = self.task_source_var.get()
+            if source == "editor":
+                refresh_editor_configs()
+                # Update editor config selector values periodically
+                if hasattr(self, 'task_editor'):
+                    config_names = list(self.task_editor.task_configs.keys())
+                    self.editor_config_selector['values'] = config_names
+        
+        self.task_source_var.trace('w', on_source_change)
+        
+        # Periodically refresh editor config selector
+        def periodic_refresh():
+            if self.task_source_var.get() == "editor" and hasattr(self, 'task_editor'):
+                config_names = list(self.task_editor.task_configs.keys())
+                self.editor_config_selector['values'] = config_names
+                if not self.editor_config_selector_var.get() and config_names:
+                    self.editor_config_selector_var.set(config_names[0])
+            self.root.after(1000, periodic_refresh)
+        
+        periodic_refresh()
     
     def _refresh_config_tree(self):
         """Refresh the configuration tree in the Config Management tab."""
