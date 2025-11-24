@@ -31,6 +31,17 @@
       "body": "{\"key\": \"value\", \"timestamp\": \"2024-01-01T00:00:00Z\"}",
       "delay_before": 1.0,
       "delay_after": 1.0
+    },
+    {
+      "config_name": "API Config",
+      "method": "POST",
+      "path": "/api/users",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body_file": "example_request.json",
+      "delay_before": 1.0,
+      "delay_after": 1.0
     }
   ]
 }

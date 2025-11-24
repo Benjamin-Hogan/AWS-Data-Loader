@@ -62,7 +62,6 @@ class ConfigFrame(ttk.LabelFrame):
         token = self.token_var.get().strip()
         if token:
             self.on_token_change(token)
-            messagebox.showinfo("Token Set", "Authentication token configured")
         else:
             messagebox.showwarning("Invalid Token", "Please enter a token")
 

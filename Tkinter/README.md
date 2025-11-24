@@ -4,7 +4,10 @@ A basic Tkinter-based GUI for the REST Data Loader. This provides a simple, func
 
 ## Features
 
-- **Basic Tkinter GUI**: Simple, functional interface
+- **Tabbed Interface**: Streamlined interface with tabs for different features
+- **API Testing Tab**: Main interface for testing endpoints
+- **Config Management Tab**: Manage multiple API configurations in-app
+- **Autonomous Loader Tab**: Execute batch requests without pop-ups
 - **Multiple API Configurations**: Manage multiple OpenAPI specifications
 - **Dynamic Endpoint Generation**: Automatically creates forms from OpenAPI specs
 - **Request/Response Viewer**: View formatted JSON responses
@@ -57,17 +60,20 @@ python main.py
 
 ### Managing Configurations
 
-- **Add Configuration**: `File > Manage API Configurations > Add`
-- **Remove Configuration**: `File > Manage API Configurations > Remove`
-- **Switch Configuration**: Use the dropdown in the API Configuration panel
+- **Access Config Management**: Click the "Config Management" tab or go to `File > Manage API Configurations`
+- **Add Configuration**: Click "Add" button in the Config Management tab
+- **Remove Configuration**: Select a configuration and click "Remove"
+- **Switch Configuration**: Use the dropdown in the API Configuration panel on the API Testing tab
 
 ### Autonomous Data Loading
 
-1. Go to `Tools > Autonomous Data Loader`
-2. Select a task configuration file (JSON)
+1. Click the "Autonomous Loader" tab or go to `Tools > Autonomous Data Loader`
+2. Select a task configuration file (JSON) using the Browse button
 3. Click "Execute Tasks"
 4. Monitor progress in the progress window
-5. Save results when complete
+5. Save results when complete (prompted automatically)
+
+**Note**: All features are now integrated into tabs within the main window - no more pop-up dialogs!
 
 ## Dependencies
 

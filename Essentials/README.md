@@ -209,10 +209,31 @@ Tasks are defined in JSON format:
       "path": "/api/users",
       "body": "{\"name\": \"John\"}",
       "headers": {"Content-Type": "application/json"}
+    },
+    {
+      "config_name": "api1",
+      "method": "POST",
+      "path": "/api/users",
+      "body_file": "example_request.json",
+      "headers": {"Content-Type": "application/json"}
     }
   ]
 }
 ```
+
+### Task Fields
+
+- `config_name` (required): Name of the API configuration to use
+- `method` (required): HTTP method (GET, POST, PUT, DELETE, etc.)
+- `path` (required): API endpoint path
+- `params` (optional): Query parameters as a dictionary
+- `headers` (optional): Additional headers as a dictionary
+- `body` (optional): Request body as a JSON string (use this for inline JSON)
+- `body_file` (optional): Path to a JSON file containing the request body (resolved relative to the task file)
+- `delay_before` (optional): Delay in seconds before making the request (default: 0.0)
+- `delay_after` (optional): Delay in seconds after making the request (default: 0.0)
+
+**Note**: If both `body` and `body_file` are specified, `body_file` takes precedence. The `body_file` path is resolved relative to the task file's directory.
 
 ## Requirements
 

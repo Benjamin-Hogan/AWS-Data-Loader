@@ -132,13 +132,25 @@ class AutonomousLoader:
                     "path": "/api/data",
                     "body": "{\"key\": \"value\"}",
                     "headers": {"Content-Type": "application/json"}
+                },
+                {
+                    "config_name": "api3",
+                    "method": "POST",
+                    "path": "/api/data",
+                    "body_file": "example_request.json",
+                    "headers": {"Content-Type": "application/json"}
                 }
             ]
         }
+        
+        Note: If both "body" and "body_file" are specified, "body_file" takes precedence.
+        The "body_file" path is resolved relative to the task file's directory.
         """
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Task file not found: {file_path}")
+        
+        task_file_dir = path.parent
         
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -146,6 +158,29 @@ class AutonomousLoader:
         tasks = []
         for task_data in data.get('tasks', []):
             try:
+                # Handle body_file: load JSON from file and convert to string
+                if 'body_file' in task_data:
+                    body_file_path = Path(task_data['body_file'])
+                    
+                    # Resolve path relative to task file directory if not absolute
+                    if not body_file_path.is_absolute():
+                        body_file_path = task_file_dir / body_file_path
+                    
+                    if not body_file_path.exists():
+                        raise FileNotFoundError(
+                            f"Body file not found: {body_file_path} "
+                            f"(resolved from: {task_data['body_file']})"
+                        )
+                    
+                    # Load JSON from file
+                    with open(body_file_path, 'r', encoding='utf-8') as body_f:
+                        body_data = json.load(body_f)
+                    
+                    # Convert to JSON string
+                    task_data['body'] = json.dumps(body_data, ensure_ascii=False)
+                    # Remove body_file from task_data to avoid confusion
+                    del task_data['body_file']
+                
                 task = RequestTask.from_dict(task_data)
                 tasks.append(task)
             except Exception as e:
