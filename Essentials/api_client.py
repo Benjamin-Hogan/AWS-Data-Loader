@@ -7,7 +7,7 @@ import http.client
 import json
 import time
 import urllib.parse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, Tuple
 from urllib.parse import urlparse
 
 
@@ -143,13 +143,76 @@ class APIClient:
             if conn:
                 conn.close()
     
+    def _create_multipart_form_data(self, fields: Dict[str, Any], files: Optional[Dict[str, Union[str, tuple]]] = None) -> Tuple[bytes, str]:
+        """
+        Create multipart/form-data body.
+        
+        Args:
+            fields: Dictionary of form fields (name -> value)
+            files: Dictionary of files (name -> file_path or (file_path, content_type) or (file_path, content_type, filename))
+            
+        Returns:
+            Tuple of (body_bytes, boundary_string)
+        """
+        boundary = f"----WebKitFormBoundary{time.time()}"
+        body_parts = []
+        
+        # Add form fields
+        for name, value in fields.items():
+            body_parts.append(f"--{boundary}\r\n".encode('utf-8'))
+            body_parts.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode('utf-8'))
+            body_parts.append(f"{value}\r\n".encode('utf-8'))
+        
+        # Add files
+        if files:
+            for name, file_info in files.items():
+                body_parts.append(f"--{boundary}\r\n".encode('utf-8'))
+                
+                if isinstance(file_info, str):
+                    # Just file path
+                    file_path = file_info
+                    content_type = 'application/octet-stream'
+                    filename = file_path.split('/')[-1].split('\\')[-1]
+                elif isinstance(file_info, tuple) and len(file_info) == 2:
+                    # (file_path, content_type)
+                    file_path, content_type = file_info
+                    filename = file_path.split('/')[-1].split('\\')[-1]
+                elif isinstance(file_info, tuple) and len(file_info) == 3:
+                    # (file_path, content_type, filename)
+                    file_path, content_type, filename = file_info
+                else:
+                    continue
+                
+                try:
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    body_parts.append(
+                        f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode('utf-8')
+                    )
+                    body_parts.append(f'Content-Type: {content_type}\r\n\r\n'.encode('utf-8'))
+                    body_parts.append(file_content)
+                    body_parts.append(b'\r\n')
+                except Exception:
+                    # If file doesn't exist, skip it
+                    continue
+        
+        body_parts.append(f"--{boundary}--\r\n".encode('utf-8'))
+        
+        body_bytes = b''.join(body_parts)
+        content_type_header = f'multipart/form-data; boundary={boundary}'
+        
+        return body_bytes, content_type_header
+    
     def make_request(
         self,
         method: str,
         path: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        body: Optional[str] = None
+        body: Optional[str] = None,
+        multipart_data: Optional[Dict[str, Any]] = None,
+        multipart_files: Optional[Dict[str, Union[str, tuple]]] = None
     ) -> Dict[str, Any]:
         """
         Make an HTTP request with retry logic.
@@ -159,7 +222,9 @@ class APIClient:
             path: API endpoint path (e.g., '/api/users')
             params: Query parameters
             headers: Additional headers (merged with session headers)
-            body: Request body as string (JSON)
+            body: Request body as string (JSON or other text)
+            multipart_data: Dictionary of form fields for multipart/form-data
+            multipart_files: Dictionary of files for multipart/form-data
             
         Returns:
             Dictionary containing response information:
@@ -186,7 +251,15 @@ class APIClient:
         
         # Prepare body
         body_bytes = None
-        if body:
+        
+        # Handle multipart/form-data
+        if multipart_data is not None or multipart_files is not None:
+            body_bytes, content_type = self._create_multipart_form_data(
+                fields=multipart_data or {},
+                files=multipart_files
+            )
+            request_headers['Content-Type'] = content_type
+        elif body:
             try:
                 # Try to parse as JSON to validate
                 json.loads(body)
@@ -194,7 +267,9 @@ class APIClient:
                 body_bytes = body.encode('utf-8')
             except json.JSONDecodeError:
                 # If not valid JSON, send as raw string
-                request_headers['Content-Type'] = 'text/plain'
+                # Only override Content-Type if not already set
+                if 'Content-Type' not in request_headers:
+                    request_headers['Content-Type'] = 'text/plain'
                 body_bytes = body.encode('utf-8')
         
         # Retry logic

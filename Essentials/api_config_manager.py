@@ -225,6 +225,32 @@ class APIConfigManager:
         """Get all configuration names."""
         return list(self.configs.keys())
     
+    def refresh_config(self, name: str) -> bool:
+        """
+        Refresh OpenAPI specification for a configuration.
+        
+        Args:
+            name: Name of configuration to refresh
+            
+        Returns:
+            True if refreshed successfully, False if not found or no spec path
+        """
+        config = self.get_config(name)
+        if not config:
+            return False
+        
+        if not config.openapi_spec_path:
+            return False
+        
+        try:
+            # Reload the OpenAPI spec from the stored path
+            config.load_openapi_spec()
+            # Save the config (though spec path hasn't changed, this ensures consistency)
+            self.save_configs()
+            return True
+        except Exception as e:
+            raise ValueError(f"Failed to refresh OpenAPI spec: {str(e)}")
+    
     def load_configs(self):
         """Load configurations from file."""
         config_path = Path(self.config_file)

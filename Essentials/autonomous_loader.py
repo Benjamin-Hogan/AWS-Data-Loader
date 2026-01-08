@@ -23,6 +23,9 @@ class RequestTask:
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
         body: Optional[str] = None,
+        multipart_data: Optional[Dict[str, Any]] = None,
+        multipart_files: Optional[Dict[str, Any]] = None,
+        extract_vars: Optional[Dict[str, str]] = None,
         delay_before: float = 0.0,
         delay_after: float = 0.0
     ):
@@ -35,7 +38,10 @@ class RequestTask:
             path: API endpoint path
             params: Query parameters
             headers: Additional headers
-            body: Request body (JSON string)
+            body: Request body (JSON string or other text)
+            multipart_data: Dictionary of form fields for multipart/form-data
+            multipart_files: Dictionary of files for multipart/form-data (name -> file_path or (file_path, content_type) or (file_path, content_type, filename))
+            extract_vars: Dictionary mapping variable names to JSON paths to extract from response (e.g., {'user_id': 'json.id', 'token': 'json.access_token'})
             delay_before: Delay in seconds before making request
             delay_after: Delay in seconds after making request
         """
@@ -45,6 +51,9 @@ class RequestTask:
         self.params = params or {}
         self.headers = headers or {}
         self.body = body
+        self.multipart_data = multipart_data
+        self.multipart_files = multipart_files
+        self.extract_vars = extract_vars or {}
         self.delay_before = delay_before
         self.delay_after = delay_after
         self.result: Optional[Dict[str, Any]] = None
@@ -53,7 +62,7 @@ class RequestTask:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert task to dictionary."""
-        return {
+        result = {
             'config_name': self.config_name,
             'method': self.method,
             'path': self.path,
@@ -63,6 +72,13 @@ class RequestTask:
             'delay_before': self.delay_before,
             'delay_after': self.delay_after
         }
+        if self.multipart_data:
+            result['multipart_data'] = self.multipart_data
+        if self.multipart_files:
+            result['multipart_files'] = self.multipart_files
+        if self.extract_vars:
+            result['extract_vars'] = self.extract_vars
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RequestTask':
@@ -74,6 +90,9 @@ class RequestTask:
             params=data.get('params'),
             headers=data.get('headers'),
             body=data.get('body'),
+            multipart_data=data.get('multipart_data'),
+            multipart_files=data.get('multipart_files'),
+            extract_vars=data.get('extract_vars'),
             delay_before=data.get('delay_before', 0.0),
             delay_after=data.get('delay_after', 0.0)
         )
@@ -145,12 +164,49 @@ class AutonomousLoader:
                     "path": "/api/data",
                     "body_file": "example_request.json",
                     "headers": {"Content-Type": "application/json"}
+                },
+                {
+                    "config_name": "api4",
+                    "method": "POST",
+                    "path": "/api/upload",
+                    "multipart_data": {
+                        "field1": "value1",
+                        "field2": "value2"
+                    },
+                    "multipart_files": {
+                        "file1": "/path/to/file.txt",
+                        "file2": ["/path/to/image.jpg", "image/jpeg"],
+                        "file3": ["/path/to/doc.pdf", "application/pdf", "document.pdf"]
+                    }
+                },
+                {
+                    "config_name": "api5",
+                    "method": "POST",
+                    "path": "/api/login",
+                    "body": "{\"username\": \"user\", \"password\": \"pass\"}",
+                    "extract_vars": {
+                        "auth_token": "json.access_token",
+                        "user_id": "json.user.id",
+                        "session_id": "headers.set-cookie"
+                    }
+                },
+                {
+                    "config_name": "api6",
+                    "method": "GET",
+                    "path": "/api/user/{{user_id}}",
+                    "headers": {
+                        "Authorization": "Bearer {{auth_token}}"
+                    }
                 }
             ]
         }
         
-        Note: If both "body" and "body_file" are specified, "body_file" takes precedence.
-        The "body_file" path is resolved relative to the task file's directory.
+        Note: 
+        - If both "body" and "body_file" are specified, "body_file" takes precedence.
+        - The "body_file" path is resolved relative to the task file's directory.
+        - "multipart_data" and "multipart_files" are used for multipart/form-data requests.
+        - "extract_vars" allows extracting values from responses for use in subsequent tasks.
+          Path formats: "json.field", "body", "headers.header_name", "status_code", "response.json.field"
         """
         path = Path(file_path)
         if not path.exists():
@@ -350,6 +406,8 @@ class AutonomousLoader:
             substituted_params = self._substitute_variables(task.params) if task.params else None
             substituted_headers = self._substitute_variables(task.headers) if task.headers else None
             substituted_body = self._substitute_variables(task.body) if task.body else None
+            substituted_multipart_data = self._substitute_variables(task.multipart_data) if task.multipart_data else None
+            substituted_multipart_files = self._substitute_variables(task.multipart_files) if task.multipart_files else None
             
             # Make request
             response = config.api_client.make_request(
@@ -357,7 +415,9 @@ class AutonomousLoader:
                 path=substituted_path,
                 params=substituted_params,
                 headers=substituted_headers,
-                body=substituted_body
+                body=substituted_body,
+                multipart_data=substituted_multipart_data,
+                multipart_files=substituted_multipart_files
             )
             
             task.result = response
@@ -365,28 +425,77 @@ class AutonomousLoader:
             
             # Extract response data for variable storage (if task has extract_vars)
             # This allows storing response data for use in subsequent tasks
-            if hasattr(task, 'extract_vars') and task.extract_vars:
-                for var_name, json_path in task.extract_vars.items():
+            if task.extract_vars:
+                for var_name, path_expr in task.extract_vars.items():
                     try:
-                        # Navigate JSON path
-                        data = response.get('json', {})
-                        for part in json_path.split('.'):
-                            if isinstance(data, dict):
-                                data = data.get(part)
-                            elif isinstance(data, list):
-                                try:
-                                    data = data[int(part)]
-                                except (ValueError, IndexError):
-                                    data = None
+                        # Support different path formats:
+                        # - 'json.field.subfield' - navigate JSON response
+                        # - 'body' - get raw body
+                        # - 'headers.header_name' - get header value
+                        # - 'status_code' - get status code
+                        # - 'response.json.field' - explicit response.json path
+                        
+                        data = None
+                        path_parts = path_expr.split('.')
+                        
+                        if path_parts[0] == 'json' or (len(path_parts) > 1 and path_parts[0] == 'response' and path_parts[1] == 'json'):
+                            # Navigate JSON response
+                            if path_parts[0] == 'response':
+                                # Skip 'response' and 'json'
+                                path_parts = path_parts[2:]
                             else:
-                                data = None
+                                # Skip 'json'
+                                path_parts = path_parts[1:]
                             
-                            if data is None:
-                                break
+                            data = response.get('json', {})
+                            for part in path_parts:
+                                if isinstance(data, dict):
+                                    data = data.get(part)
+                                elif isinstance(data, list):
+                                    try:
+                                        data = data[int(part)]
+                                    except (ValueError, IndexError):
+                                        data = None
+                                else:
+                                    data = None
+                                
+                                if data is None:
+                                    break
+                        elif path_parts[0] == 'body':
+                            # Get raw body
+                            data = response.get('body', '')
+                        elif path_parts[0] == 'headers' and len(path_parts) > 1:
+                            # Get header value
+                            header_name = '.'.join(path_parts[1:])
+                            headers = response.get('headers', {})
+                            data = headers.get(header_name.lower()) or headers.get(header_name)
+                        elif path_expr == 'status_code':
+                            # Get status code
+                            data = response.get('status_code')
+                        else:
+                            # Try to navigate from response root
+                            data = response
+                            for part in path_parts:
+                                if isinstance(data, dict):
+                                    data = data.get(part)
+                                elif isinstance(data, list):
+                                    try:
+                                        data = data[int(part)]
+                                    except (ValueError, IndexError):
+                                        data = None
+                                else:
+                                    data = None
+                                
+                                if data is None:
+                                    break
                         
                         if data is not None:
                             self.set_variable(var_name, data)
-                    except Exception:
+                            if self.on_progress:
+                                self.on_progress(f"Extracted variable '{var_name}' = {str(data)[:100]}")
+                    except Exception as e:
+                        if self.on_progress:
+                            self.on_progress(f"Failed to extract variable '{var_name}': {str(e)}")
                         pass
             
             # Delay after request

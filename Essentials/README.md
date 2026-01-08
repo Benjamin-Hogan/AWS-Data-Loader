@@ -98,6 +98,16 @@ response = client.post(
     "/api/users",
     body='{"name": "John", "email": "john@example.com"}'
 )
+
+# POST request with multipart/form-data
+response = client.post(
+    "/api/upload",
+    multipart_data={"description": "File upload"},
+    multipart_files={
+        "file": "path/to/file.pdf",
+        "image": ["path/to/image.jpg", "image/jpeg"]
+    }
+)
 ```
 
 #### Using OpenAPIParser
@@ -131,6 +141,11 @@ config = manager.add_config(
 # Get configuration
 config = manager.get_config("api1")
 response = config.api_client.get("/api/users")
+
+# Refresh OpenAPI spec (useful when spec file is updated)
+manager.refresh_config("api1")
+# Or refresh directly on the config object
+config.load_openapi_spec()
 ```
 
 #### Using AutonomousLoader
@@ -161,6 +176,7 @@ REST API client with:
 - Bearer token authentication
 - Custom headers support
 - JSON and raw body support
+- Multipart/form-data support for file uploads
 - Timeout handling
 
 ### `openapi_parser.py`
@@ -169,6 +185,7 @@ OpenAPI specification parser supporting:
 - JSON and YAML formats
 - Endpoint extraction
 - Parameter and request body schema extraction
+- Support for multipart/form-data and application/x-www-form-urlencoded content types
 
 ### `api_config_manager.py`
 Configuration management with:
@@ -186,7 +203,9 @@ Autonomous task execution with:
 - Result saving
 - Variable substitution ({{variable_name}})
 - Response data extraction from previous tasks
+- Automatic response variable storage (extract_vars)
 - Built-in variables (timestamp, timestamp_unix)
+- Multipart form data support
 
 ### `cli.py`
 Command-line interface for all operations.
@@ -242,9 +261,11 @@ Tasks are defined in JSON format:
 - `headers` (optional): Additional headers as a dictionary (supports variable substitution)
 - `body` (optional): Request body as a JSON string (use this for inline JSON, supports variable substitution)
 - `body_file` (optional): Path to a JSON file containing the request body (resolved relative to the task file)
+- `multipart_data` (optional): Dictionary of form fields for multipart/form-data requests (supports variable substitution)
+- `multipart_files` (optional): Dictionary of files for multipart/form-data requests. Format: `{"name": "file_path"}` or `{"name": ["file_path", "content_type"]}` or `{"name": ["file_path", "content_type", "filename"]}`
 - `delay_before` (optional): Delay in seconds before making the request (default: 0.0)
 - `delay_after` (optional): Delay in seconds after making the request (default: 0.0)
-- `extract_vars` (optional): Dictionary mapping variable names to JSON paths for extracting data from response
+- `extract_vars` (optional): Dictionary mapping variable names to response paths for extracting data from response (see Response Data Extraction below)
 
 **Note**: If both `body` and `body_file` are specified, `body_file` takes precedence. The `body_file` path is resolved relative to the task file's directory.
 
@@ -262,23 +283,66 @@ The autonomous loader supports variable substitution using `{{variable_name}}` s
 
 ### Response Data Extraction
 
-Use the `extract_vars` field to automatically extract data from responses for use in subsequent tasks:
+Use the `extract_vars` field to automatically extract data from responses for use in subsequent tasks. Supported path formats:
+
+- `json.field.subfield` - Navigate JSON response (e.g., `json.user.id`)
+- `response.json.field` - Explicit response.json path
+- `body` - Get raw response body
+- `headers.header_name` - Get header value (e.g., `headers.authorization`)
+- `status_code` - Get HTTP status code
+
+Example:
 
 ```json
 {
   "config_name": "api1",
   "method": "POST",
-  "path": "/api/users",
-  "body": "{\"name\": \"John\"}",
+  "path": "/api/login",
+  "body": "{\"username\": \"user\", \"password\": \"pass\"}",
   "extract_vars": {
-    "user_id": "id",
-    "user_email": "email",
-    "created_at": "created_at"
+    "auth_token": "json.access_token",
+    "user_id": "json.user.id",
+    "refresh_token": "json.refresh_token",
+    "session_cookie": "headers.set-cookie"
+  }
+},
+{
+  "config_name": "api1",
+  "method": "GET",
+  "path": "/api/user/{{user_id}}",
+  "headers": {
+    "Authorization": "Bearer {{auth_token}}"
   }
 }
 ```
 
-This extracts `id`, `email`, and `created_at` from the response JSON and makes them available as variables for subsequent tasks.
+This extracts values from the login response and makes them available as variables (e.g., `{{auth_token}}`, `{{user_id}}`) for use in subsequent tasks.
+
+### Multipart Form Data
+
+For endpoints that require multipart/form-data (file uploads), use `multipart_data` and `multipart_files`:
+
+```json
+{
+  "config_name": "api1",
+  "method": "POST",
+  "path": "/api/upload",
+  "multipart_data": {
+    "description": "File upload",
+    "category": "documents"
+  },
+  "multipart_files": {
+    "file": "path/to/file.pdf",
+    "image": ["path/to/image.jpg", "image/jpeg"],
+    "document": ["path/to/doc.pdf", "application/pdf", "custom_name.pdf"]
+  }
+}
+```
+
+File formats:
+- Simple: `"file": "path/to/file.txt"` - Uses default content type
+- With content type: `"file": ["path/to/file.jpg", "image/jpeg"]`
+- With content type and filename: `"file": ["path/to/file.pdf", "application/pdf", "custom_name.pdf"]`
 
 ## Requirements
 

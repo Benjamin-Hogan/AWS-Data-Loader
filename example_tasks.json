@@ -42,6 +42,48 @@
       "body_file": "example_request.json",
       "delay_before": 1.0,
       "delay_after": 1.0
+    },
+    {
+      "config_name": "API Config",
+      "method": "POST",
+      "path": "/api/upload",
+      "multipart_data": {
+        "description": "File upload",
+        "category": "documents"
+      },
+      "multipart_files": {
+        "file": "path/to/file.pdf",
+        "image": ["path/to/image.jpg", "image/jpeg"],
+        "document": ["path/to/doc.pdf", "application/pdf", "custom_name.pdf"]
+      },
+      "delay_before": 1.0,
+      "delay_after": 1.0
+    },
+    {
+      "config_name": "API Config",
+      "method": "POST",
+      "path": "/api/login",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"username\": \"user\", \"password\": \"pass\"}",
+      "extract_vars": {
+        "auth_token": "json.access_token",
+        "user_id": "json.user.id",
+        "refresh_token": "json.refresh_token"
+      },
+      "delay_before": 1.0,
+      "delay_after": 0.5
+    },
+    {
+      "config_name": "API Config",
+      "method": "GET",
+      "path": "/api/user/{{user_id}}",
+      "headers": {
+        "Authorization": "Bearer {{auth_token}}"
+      },
+      "delay_before": 0.5,
+      "delay_after": 0.5
     }
   ]
 }

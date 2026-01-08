@@ -119,6 +119,12 @@ class RESTDataLoaderApp:
         
         ttk.Button(
             config_selector_frame,
+            text="Refresh Spec",
+            command=self._refresh_current_config_spec
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            config_selector_frame,
             text="Switch to Config Tab",
             command=lambda: self.notebook.select(1)
         ).pack(side=tk.LEFT, padx=5)
@@ -273,14 +279,60 @@ class RESTDataLoaderApp:
             except Exception as e:
                 self.config_error_label.config(text=f"Error removing configuration: {str(e)}", foreground="red")
         
-        def refresh_config():
+        def refresh_config_list():
+            """Refresh the configuration list display."""
             self._refresh_config_tree()
             self._refresh_config_selector()
-            self.config_error_label.config(text="Configurations refreshed", foreground="green")
+            self.config_error_label.config(text="Configurations list refreshed", foreground="green")
             self.root.after(2000, lambda: self.config_error_label.config(text=""))
         
+        def refresh_openapi_spec():
+            """Refresh the OpenAPI spec for the selected configuration."""
+            selection = self.config_tree.selection()
+            if not selection:
+                self.config_error_label.config(text="Please select a configuration to refresh", foreground="orange")
+                return
+            
+            item = self.config_tree.item(selection[0])
+            config_name = item['values'][0]
+            
+            config = self.config_manager.get_config(config_name)
+            if not config:
+                self.config_error_label.config(text=f"Configuration '{config_name}' not found", foreground="red")
+                return
+            
+            if not config.openapi_spec_path:
+                self.config_error_label.config(
+                    text=f"Configuration '{config_name}' has no OpenAPI spec path configured", 
+                    foreground="orange"
+                )
+                return
+            
+            try:
+                # Refresh the OpenAPI spec
+                self.config_manager.refresh_config(config_name)
+                
+                # If this is the current config, reload endpoints
+                if self.current_config and self.current_config.name == config_name:
+                    self.openapi_spec = config.openapi_spec
+                    self.endpoints = config.endpoints
+                    self._reload_endpoints()
+                
+                self.config_error_label.config(
+                    text=f"OpenAPI spec refreshed for '{config_name}' ({len(config.endpoints)} endpoint(s))", 
+                    foreground="green"
+                )
+                # Clear message after 3 seconds
+                self.root.after(3000, lambda: self.config_error_label.config(text=""))
+            except Exception as e:
+                self.config_error_label.config(
+                    text=f"Error refreshing OpenAPI spec: {str(e)}", 
+                    foreground="red"
+                )
+        
         ttk.Button(button_frame, text="Remove Selected", command=remove_config).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Refresh", command=refresh_config).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Refresh OpenAPI Spec", command=refresh_openapi_spec).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Refresh List", command=refresh_config_list).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Switch to API Testing", command=lambda: self.notebook.select(0)).pack(side=tk.RIGHT, padx=5)
     
     def _add_config_from_form(self):
@@ -723,6 +775,41 @@ Tasks will be executed sequentially with the configured delays."""
         # Also refresh the config tree if it exists
         self._refresh_config_tree()
     
+    def _refresh_current_config_spec(self):
+        """Refresh the OpenAPI spec for the currently selected configuration."""
+        config_name = self.config_selector_var.get()
+        if not config_name:
+            self._set_status("No configuration selected", "orange")
+            return
+        
+        config = self.config_manager.get_config(config_name)
+        if not config:
+            self._set_status(f"Configuration '{config_name}' not found", "red")
+            return
+        
+        if not config.openapi_spec_path:
+            self._set_status(f"Configuration '{config_name}' has no OpenAPI spec path", "orange")
+            return
+        
+        try:
+            # Refresh the OpenAPI spec
+            self.config_manager.refresh_config(config_name)
+            
+            # Update current config reference
+            self.current_config = config
+            self.openapi_spec = config.openapi_spec
+            self.endpoints = config.endpoints
+            
+            # Reload endpoints in UI
+            self._reload_endpoints()
+            
+            self._set_status(
+                f"OpenAPI spec refreshed for '{config_name}' ({len(config.endpoints)} endpoint(s))", 
+                "green"
+            )
+        except Exception as e:
+            self._set_status(f"Error refreshing OpenAPI spec: {str(e)}", "red")
+    
     def _on_config_selected(self, event=None):
         """Handle configuration selection change."""
         config_name = self.config_selector_var.get()
@@ -951,7 +1038,9 @@ Tasks will be executed sequentially with the configured delays."""
     
             
     def _on_endpoint_request(self, method: str, path: str, params: Dict[str, Any], 
-                            headers: Dict[str, Any], body: Optional[str] = None):
+                            headers: Dict[str, Any], body: Optional[str] = None,
+                            multipart_data: Optional[Dict[str, Any]] = None,
+                            multipart_files: Optional[Dict[str, Any]] = None):
         """Handle endpoint request."""
         if not self.api_client:
             self._set_status("Error: Please configure the base URL first", "red")
@@ -964,7 +1053,9 @@ Tasks will be executed sequentially with the configured delays."""
                 path=path,
                 params=params,
                 headers=headers,
-                body=body
+                body=body,
+                multipart_data=multipart_data,
+                multipart_files=multipart_files
             )
             
             self.response_frame.display_response(response)

@@ -124,7 +124,32 @@ class OpenAPIParser:
                             request_body = copy.deepcopy(request_body)
                             content = request_body.get('content', {})
                             for content_type, content_schema in content.items():
+                                # Handle JSON content types
                                 if 'application/json' in content_type or 'json' in content_type:
+                                    schema = content_schema.get('schema')
+                                    if schema and isinstance(schema, dict):
+                                        if '$ref' in schema:
+                                            # Resolve the $ref
+                                            resolved_schema = self._resolve_schema(schema)
+                                            if resolved_schema and resolved_schema != schema:
+                                                content_schema['schema'] = resolved_schema
+                                        else:
+                                            # Even if no $ref, recursively resolve any nested $ref
+                                            content_schema['schema'] = self._resolve_schema(schema)
+                                # Handle multipart/form-data content types
+                                elif 'multipart/form-data' in content_type or 'multipart' in content_type:
+                                    schema = content_schema.get('schema')
+                                    if schema and isinstance(schema, dict):
+                                        if '$ref' in schema:
+                                            # Resolve the $ref
+                                            resolved_schema = self._resolve_schema(schema)
+                                            if resolved_schema and resolved_schema != schema:
+                                                content_schema['schema'] = resolved_schema
+                                        else:
+                                            # Even if no $ref, recursively resolve any nested $ref
+                                            content_schema['schema'] = self._resolve_schema(schema)
+                                # Handle application/x-www-form-urlencoded
+                                elif 'application/x-www-form-urlencoded' in content_type or 'form-urlencoded' in content_type:
                                     schema = content_schema.get('schema')
                                     if schema and isinstance(schema, dict):
                                         if '$ref' in schema:
@@ -273,7 +298,22 @@ class OpenAPIParser:
         # Extract schema from request body
         content = request_body.get('content', {})
         for content_type, content_schema in content.items():
+            # Check for JSON content types
             if 'application/json' in content_type or 'json' in content_type:
+                schema = content_schema.get('schema', {})
+                if schema:
+                    # Resolve $ref references
+                    return self._resolve_schema(schema)
+                return schema
+            # Check for multipart/form-data content types
+            elif 'multipart/form-data' in content_type or 'multipart' in content_type:
+                schema = content_schema.get('schema', {})
+                if schema:
+                    # Resolve $ref references
+                    return self._resolve_schema(schema)
+                return schema
+            # Check for application/x-www-form-urlencoded
+            elif 'application/x-www-form-urlencoded' in content_type or 'form-urlencoded' in content_type:
                 schema = content_schema.get('schema', {})
                 if schema:
                     # Resolve $ref references
@@ -281,6 +321,46 @@ class OpenAPIParser:
                 return schema
                 
         return None
+    
+    def get_request_body_content_type(self, path: str, method: str) -> Optional[str]:
+        """
+        Get the primary content type for request body of an endpoint.
+        
+        Args:
+            path: API path
+            method: HTTP method
+            
+        Returns:
+            Content type string (e.g., 'application/json', 'multipart/form-data') or None
+        """
+        if path not in self.endpoints:
+            return None
+            
+        method_lower = method.lower()
+        if method_lower not in self.endpoints[path]:
+            return None
+            
+        request_body = self.endpoints[path][method_lower].get('request_body')
+        if not request_body:
+            return None
+            
+        content = request_body.get('content', {})
+        if not content:
+            return None
+        
+        # Priority: multipart/form-data > application/x-www-form-urlencoded > application/json
+        for content_type in content.keys():
+            if 'multipart/form-data' in content_type or 'multipart' in content_type:
+                return content_type
+        for content_type in content.keys():
+            if 'application/x-www-form-urlencoded' in content_type or 'form-urlencoded' in content_type:
+                return content_type
+        for content_type in content.keys():
+            if 'application/json' in content_type or 'json' in content_type:
+                return content_type
+        
+        # Return first content type if none matched
+        return list(content.keys())[0] if content else None
         
     def get_base_url(self) -> Optional[str]:
         """

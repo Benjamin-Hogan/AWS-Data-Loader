@@ -74,7 +74,7 @@ class EndpointFrame(ttk.LabelFrame):
         parent,
         path: str,
         methods: Dict[str, Any],
-        on_request: Callable[[str, str, Dict[str, Any], Dict[str, str], Optional[str]], None]
+        on_request: Callable[[str, str, Dict[str, Any], Dict[str, str], Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None]
     ):
         super().__init__(parent, text=f"Endpoint: {path}", padding=10)
         self.path = path
@@ -116,11 +116,12 @@ class EndpointFrame(ttk.LabelFrame):
         button_frame = ttk.Frame(self)
         button_frame.grid(row=3, column=0, columnspan=3, pady=10)
         
-        ttk.Button(
-            button_frame,
-            text="Load JSON File",
-            command=self._load_json_file
-        ).pack(side=tk.LEFT, padx=5)
+        if self.content_type == 'json':
+            ttk.Button(
+                button_frame,
+                text="Load JSON File",
+                command=self._load_json_file
+            ).pack(side=tk.LEFT, padx=5)
         
         ttk.Button(
             button_frame,
@@ -185,22 +186,171 @@ class EndpointFrame(ttk.LabelFrame):
                 
         # Create request body input
         request_body = method_info.get('request_body')
+        self.body_text = None
+        self.multipart_data_vars = {}
+        self.multipart_files_vars = {}
+        self.content_type = None
+        
         if request_body and method.upper() in ['POST', 'PUT', 'PATCH']:
-            ttk.Label(self.body_frame, text="Request Body (JSON):", font=("TkDefaultFont", 9, "bold")).grid(
-                row=0, column=0, sticky=tk.W, pady=5
-            )
+            # Check content types
+            content = request_body.get('content', {})
             
-            self.body_text = scrolledtext.ScrolledText(
-                self.body_frame,
-                width=50,
-                height=8,
-                wrap=tk.WORD
-            )
-            self.body_text.grid(row=1, column=0, sticky=tk.EW, pady=5)
+            # Check for multipart/form-data
+            has_multipart = any('multipart/form-data' in ct or 'multipart' in ct for ct in content.keys())
+            has_form_urlencoded = any('application/x-www-form-urlencoded' in ct or 'form-urlencoded' in ct for ct in content.keys())
+            has_json = any('application/json' in ct or 'json' in ct for ct in content.keys())
             
-            self.body_frame.grid_columnconfigure(0, weight=1)
-        else:
-            self.body_text = None
+            if has_multipart:
+                self.content_type = 'multipart'
+                self._create_multipart_ui()
+            elif has_form_urlencoded:
+                self.content_type = 'form-urlencoded'
+                self._create_form_urlencoded_ui()
+            elif has_json:
+                self.content_type = 'json'
+                ttk.Label(self.body_frame, text="Request Body (JSON):", font=("TkDefaultFont", 9, "bold")).grid(
+                    row=0, column=0, sticky=tk.W, pady=5
+                )
+                
+                self.body_text = scrolledtext.ScrolledText(
+                    self.body_frame,
+                    width=50,
+                    height=8,
+                    wrap=tk.WORD
+                )
+                self.body_text.grid(row=1, column=0, sticky=tk.EW, pady=5)
+                
+                self.body_frame.grid_columnconfigure(0, weight=1)
+            else:
+                # Default to JSON if no specific content type
+                self.content_type = 'json'
+                ttk.Label(self.body_frame, text="Request Body (JSON):", font=("TkDefaultFont", 9, "bold")).grid(
+                    row=0, column=0, sticky=tk.W, pady=5
+                )
+                
+                self.body_text = scrolledtext.ScrolledText(
+                    self.body_frame,
+                    width=50,
+                    height=8,
+                    wrap=tk.WORD
+                )
+                self.body_text.grid(row=1, column=0, sticky=tk.EW, pady=5)
+                
+                self.body_frame.grid_columnconfigure(0, weight=1)
+    
+    def _create_multipart_ui(self):
+        """Create UI for multipart/form-data requests."""
+        row = 0
+        
+        ttk.Label(self.body_frame, text="Multipart Form Data:", font=("TkDefaultFont", 9, "bold")).grid(
+            row=row, column=0, columnspan=3, sticky=tk.W, pady=5
+        )
+        row += 1
+        
+        # Form fields section
+        fields_frame = ttk.LabelFrame(self.body_frame, text="Form Fields", padding=5)
+        fields_frame.grid(row=row, column=0, columnspan=3, sticky=tk.EW, pady=5)
+        fields_frame.grid_columnconfigure(1, weight=1)
+        row += 1
+        
+        # Add form field button
+        ttk.Button(fields_frame, text="Add Field", command=self._add_multipart_field).pack(anchor=tk.W, pady=2)
+        
+        self.multipart_fields_container = ttk.Frame(fields_frame)
+        self.multipart_fields_container.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Files section
+        files_frame = ttk.LabelFrame(self.body_frame, text="Files", padding=5)
+        files_frame.grid(row=row, column=0, columnspan=3, sticky=tk.EW, pady=5)
+        files_frame.grid_columnconfigure(1, weight=1)
+        row += 1
+        
+        ttk.Button(files_frame, text="Add File", command=self._add_multipart_file).pack(anchor=tk.W, pady=2)
+        
+        self.multipart_files_container = ttk.Frame(files_frame)
+        self.multipart_files_container.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        self.body_frame.grid_columnconfigure(0, weight=1)
+    
+    def _create_form_urlencoded_ui(self):
+        """Create UI for application/x-www-form-urlencoded requests."""
+        # Similar to multipart but simpler - just key-value pairs
+        ttk.Label(self.body_frame, text="Form Data (URL Encoded):", font=("TkDefaultFont", 9, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=5
+        )
+        
+        ttk.Button(self.body_frame, text="Add Field", command=self._add_form_field).grid(
+            row=1, column=0, sticky=tk.W, pady=5
+        )
+        
+        self.form_fields_container = ttk.Frame(self.body_frame)
+        self.form_fields_container.grid(row=2, column=0, columnspan=2, sticky=tk.EW, pady=5)
+        self.body_frame.grid_columnconfigure(1, weight=1)
+    
+    def _add_multipart_field(self):
+        """Add a form field input for multipart data."""
+        field_frame = ttk.Frame(self.multipart_fields_container)
+        field_frame.pack(fill=tk.X, pady=2)
+        
+        name_var = tk.StringVar()
+        value_var = tk.StringVar()
+        
+        ttk.Label(field_frame, text="Name:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(field_frame, textvariable=name_var, width=20).pack(side=tk.LEFT, padx=2)
+        ttk.Label(field_frame, text="Value:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(field_frame, textvariable=value_var, width=30).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        ttk.Button(field_frame, text="Remove", command=lambda: field_frame.destroy()).pack(side=tk.LEFT, padx=2)
+        
+        self.multipart_data_vars[len(self.multipart_data_vars)] = {
+            'name_var': name_var,
+            'value_var': value_var,
+            'frame': field_frame
+        }
+    
+    def _add_multipart_file(self):
+        """Add a file input for multipart data."""
+        file_frame = ttk.Frame(self.multipart_files_container)
+        file_frame.pack(fill=tk.X, pady=2)
+        
+        name_var = tk.StringVar()
+        file_path_var = tk.StringVar()
+        content_type_var = tk.StringVar(value="application/octet-stream")
+        
+        ttk.Label(file_frame, text="Name:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(file_frame, textvariable=name_var, width=15).pack(side=tk.LEFT, padx=2)
+        ttk.Label(file_frame, text="File:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(file_frame, textvariable=file_path_var, width=25).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        ttk.Button(file_frame, text="Browse", command=lambda: file_path_var.set(
+            filedialog.askopenfilename(title="Select File")
+        )).pack(side=tk.LEFT, padx=2)
+        ttk.Button(file_frame, text="Remove", command=lambda: file_frame.destroy()).pack(side=tk.LEFT, padx=2)
+        
+        self.multipart_files_vars[len(self.multipart_files_vars)] = {
+            'name_var': name_var,
+            'file_path_var': file_path_var,
+            'content_type_var': content_type_var,
+            'frame': file_frame
+        }
+    
+    def _add_form_field(self):
+        """Add a form field for URL-encoded form data."""
+        field_frame = ttk.Frame(self.form_fields_container)
+        field_frame.pack(fill=tk.X, pady=2)
+        
+        name_var = tk.StringVar()
+        value_var = tk.StringVar()
+        
+        ttk.Label(field_frame, text="Name:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(field_frame, textvariable=name_var, width=20).pack(side=tk.LEFT, padx=2)
+        ttk.Label(field_frame, text="Value:").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(field_frame, textvariable=value_var, width=30).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        ttk.Button(field_frame, text="Remove", command=lambda: field_frame.destroy()).pack(side=tk.LEFT, padx=2)
+        
+        self.multipart_data_vars[len(self.multipart_data_vars)] = {
+            'name_var': name_var,
+            'value_var': value_var,
+            'frame': field_frame
+        }
             
     def _load_json_file(self):
         """Load JSON file for request body."""
@@ -219,10 +369,11 @@ class EndpointFrame(ttk.LabelFrame):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # Validate JSON
-                json.loads(content)
+                # Validate and format JSON
+                parsed = json.loads(content)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False)
                 self.body_text.delete(1.0, tk.END)
-                self.body_text.insert(1.0, content)
+                self.body_text.insert(1.0, formatted)
         except json.JSONDecodeError as e:
             messagebox.showerror("Invalid JSON", f"File contains invalid JSON:\n{str(e)}")
         except Exception as e:
@@ -252,9 +403,41 @@ class EndpointFrame(ttk.LabelFrame):
                     # Replace path parameters in the path
                     path = path.replace(f'{{{param_name}}}', value)
                     
-        # Get request body
+        # Get request body or multipart data
         body = None
-        if self.body_text:
+        multipart_data = None
+        multipart_files = None
+        
+        if self.content_type == 'multipart':
+            # Collect multipart form fields
+            multipart_data = {}
+            for field_info in self.multipart_data_vars.values():
+                name = field_info['name_var'].get().strip()
+                value = field_info['value_var'].get().strip()
+                if name and value:
+                    multipart_data[name] = value
+            
+            # Collect multipart files
+            multipart_files = {}
+            for file_info in self.multipart_files_vars.values():
+                name = file_info['name_var'].get().strip()
+                file_path = file_info['file_path_var'].get().strip()
+                if name and file_path:
+                    content_type = file_info['content_type_var'].get().strip()
+                    if content_type:
+                        multipart_files[name] = (file_path, content_type)
+                    else:
+                        multipart_files[name] = file_path
+        elif self.content_type == 'form-urlencoded':
+            # For form-urlencoded, we'll convert to multipart format for now
+            # (API client can handle it)
+            multipart_data = {}
+            for field_info in self.multipart_data_vars.values():
+                name = field_info['name_var'].get().strip()
+                value = field_info['value_var'].get().strip()
+                if name and value:
+                    multipart_data[name] = value
+        elif self.body_text:
             body_content = self.body_text.get(1.0, tk.END).strip()
             if body_content:
                 try:
@@ -266,7 +449,7 @@ class EndpointFrame(ttk.LabelFrame):
                     return
                     
         # Call the request handler
-        self.on_request(method, path, params, headers, body)
+        self.on_request(method, path, params, headers, body, multipart_data, multipart_files)
 
 
 class ResponseFrame(ttk.LabelFrame):
@@ -458,9 +641,60 @@ class TaskEditorFrame(ttk.Frame):
                 self.body_text.insert(1.0, str(body_data))
         self.body_text.bind('<KeyRelease>', lambda e: self._update_task())
         
+        # Multipart Data (for multipart/form-data requests)
+        multipart_label_frame = ttk.Frame(main_frame)
+        multipart_label_frame.grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(multipart_label_frame, text="Multipart Data (JSON):").pack(side=tk.LEFT)
+        ttk.Label(multipart_label_frame, text="(Optional - for file uploads)", font=("TkDefaultFont", 8, "italic")).pack(side=tk.LEFT, padx=5)
+        
+        multipart_data_frame = ttk.Frame(main_frame)
+        multipart_data_frame.grid(row=6, column=1, sticky=tk.EW, padx=5, pady=5)
+        multipart_data_frame.grid_columnconfigure(0, weight=1)
+        
+        self.multipart_data_text = scrolledtext.ScrolledText(multipart_data_frame, width=40, height=3, wrap=tk.WORD)
+        self.multipart_data_text.grid(row=0, column=0, sticky=tk.EW)
+        multipart_data = task_data.get('multipart_data', {})
+        if multipart_data:
+            self.multipart_data_text.insert(1.0, json.dumps(multipart_data, indent=2))
+        self.multipart_data_text.bind('<KeyRelease>', lambda e: self._update_task())
+        
+        # Multipart Files
+        multipart_files_label_frame = ttk.Frame(main_frame)
+        multipart_files_label_frame.grid(row=7, column=0, sticky=tk.W, pady=5)
+        ttk.Label(multipart_files_label_frame, text="Multipart Files (JSON):").pack(side=tk.LEFT)
+        ttk.Label(multipart_files_label_frame, text="(Optional)", font=("TkDefaultFont", 8, "italic")).pack(side=tk.LEFT, padx=5)
+        
+        multipart_files_frame = ttk.Frame(main_frame)
+        multipart_files_frame.grid(row=7, column=1, sticky=tk.EW, padx=5, pady=5)
+        multipart_files_frame.grid_columnconfigure(0, weight=1)
+        
+        self.multipart_files_text = scrolledtext.ScrolledText(multipart_files_frame, width=40, height=3, wrap=tk.WORD)
+        self.multipart_files_text.grid(row=0, column=0, sticky=tk.EW)
+        multipart_files = task_data.get('multipart_files', {})
+        if multipart_files:
+            self.multipart_files_text.insert(1.0, json.dumps(multipart_files, indent=2))
+        self.multipart_files_text.bind('<KeyRelease>', lambda e: self._update_task())
+        
+        # Extract Variables (for storing response values)
+        extract_vars_label_frame = ttk.Frame(main_frame)
+        extract_vars_label_frame.grid(row=8, column=0, sticky=tk.W, pady=5)
+        ttk.Label(extract_vars_label_frame, text="Extract Vars (JSON):").pack(side=tk.LEFT)
+        ttk.Label(extract_vars_label_frame, text="(Optional - e.g., {\"token\": \"json.access_token\"})", font=("TkDefaultFont", 8, "italic")).pack(side=tk.LEFT, padx=5)
+        
+        extract_vars_frame = ttk.Frame(main_frame)
+        extract_vars_frame.grid(row=8, column=1, sticky=tk.EW, padx=5, pady=5)
+        extract_vars_frame.grid_columnconfigure(0, weight=1)
+        
+        self.extract_vars_text = scrolledtext.ScrolledText(extract_vars_frame, width=40, height=3, wrap=tk.WORD)
+        self.extract_vars_text.grid(row=0, column=0, sticky=tk.EW)
+        extract_vars = task_data.get('extract_vars', {})
+        if extract_vars:
+            self.extract_vars_text.insert(1.0, json.dumps(extract_vars, indent=2))
+        self.extract_vars_text.bind('<KeyRelease>', lambda e: self._update_task())
+        
         # Delays
         delay_frame = ttk.Frame(main_frame)
-        delay_frame.grid(row=6, column=0, columnspan=2, sticky=tk.EW, pady=5)
+        delay_frame.grid(row=9, column=0, columnspan=2, sticky=tk.EW, pady=5)
         
         ttk.Label(delay_frame, text="Delay Before:").pack(side=tk.LEFT, padx=5)
         self.delay_before_var = tk.StringVar(value=str(task_data.get('delay_before', 0.0)))
@@ -501,6 +735,33 @@ class TaskEditorFrame(ttk.Frame):
                     # If not valid JSON, use as-is
                     body = body_text
             
+            # Parse multipart data
+            multipart_data = None
+            multipart_data_text = self.multipart_data_text.get(1.0, tk.END).strip()
+            if multipart_data_text:
+                try:
+                    multipart_data = json.loads(multipart_data_text)
+                except json.JSONDecodeError:
+                    pass  # Invalid JSON, skip it
+            
+            # Parse multipart files
+            multipart_files = None
+            multipart_files_text = self.multipart_files_text.get(1.0, tk.END).strip()
+            if multipart_files_text:
+                try:
+                    multipart_files = json.loads(multipart_files_text)
+                except json.JSONDecodeError:
+                    pass  # Invalid JSON, skip it
+            
+            # Parse extract_vars
+            extract_vars = None
+            extract_vars_text = self.extract_vars_text.get(1.0, tk.END).strip()
+            if extract_vars_text:
+                try:
+                    extract_vars = json.loads(extract_vars_text)
+                except json.JSONDecodeError:
+                    pass  # Invalid JSON, skip it
+            
             # Parse delays
             delay_before = float(self.delay_before_var.get() or 0.0)
             delay_after = float(self.delay_after_var.get() or 0.0)
@@ -512,6 +773,9 @@ class TaskEditorFrame(ttk.Frame):
                 'params': params if params else None,
                 'headers': headers if headers else None,
                 'body': body,
+                'multipart_data': multipart_data,
+                'multipart_files': multipart_files,
+                'extract_vars': extract_vars,
                 'delay_before': delay_before,
                 'delay_after': delay_after
             }
