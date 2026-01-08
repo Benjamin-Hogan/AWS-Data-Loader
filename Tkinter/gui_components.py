@@ -81,6 +81,9 @@ class EndpointFrame(ttk.LabelFrame):
         self.methods = methods
         self.on_request = on_request
         
+        # Initialize content type (will be set in _on_method_change)
+        self.content_type = None
+        
         # Method selection
         ttk.Label(self, text="Method:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.method_var = tk.StringVar()
@@ -113,21 +116,19 @@ class EndpointFrame(ttk.LabelFrame):
         self.body_frame.grid(row=2, column=0, columnspan=3, sticky=tk.EW, pady=5)
         
         # Buttons
-        button_frame = ttk.Frame(self)
-        button_frame.grid(row=3, column=0, columnspan=3, pady=10)
+        self.button_frame = ttk.Frame(self)
+        self.button_frame.grid(row=3, column=0, columnspan=3, pady=10)
         
-        if self.content_type == 'json':
-            ttk.Button(
-                button_frame,
-                text="Load JSON File",
-                command=self._load_json_file
-            ).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(
-            button_frame,
+        # Send Request button (always present)
+        self.send_button = ttk.Button(
+            self.button_frame,
             text="Send Request",
             command=self._send_request
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.send_button.pack(side=tk.LEFT, padx=5)
+        
+        # Load JSON File button (will be added conditionally)
+        self.load_json_button = None
         
         self.grid_columnconfigure(2, weight=1)
         
@@ -189,7 +190,6 @@ class EndpointFrame(ttk.LabelFrame):
         self.body_text = None
         self.multipart_data_vars = {}
         self.multipart_files_vars = {}
-        self.content_type = None
         
         if request_body and method.upper() in ['POST', 'PUT', 'PATCH']:
             # Check content types
@@ -237,6 +237,25 @@ class EndpointFrame(ttk.LabelFrame):
                 self.body_text.grid(row=1, column=0, sticky=tk.EW, pady=5)
                 
                 self.body_frame.grid_columnconfigure(0, weight=1)
+        
+        # Update button frame to show/hide Load JSON File button
+        self._update_button_frame()
+    
+    def _update_button_frame(self):
+        """Update button frame based on content type."""
+        # Remove existing Load JSON File button if it exists
+        if self.load_json_button:
+            self.load_json_button.destroy()
+            self.load_json_button = None
+        
+        # Add Load JSON File button if content type is JSON
+        if self.content_type == 'json':
+            self.load_json_button = ttk.Button(
+                self.button_frame,
+                text="Load JSON File",
+                command=self._load_json_file
+            )
+            self.load_json_button.pack(side=tk.LEFT, padx=5)
     
     def _create_multipart_ui(self):
         """Create UI for multipart/form-data requests."""

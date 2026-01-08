@@ -82,6 +82,55 @@ paths:
                 $ref: >-
                   #/components/schemas/AuthenticationGenerateOAuthToken500Response
       x-public-api: true
+  /v2/files/upload:
+    post:
+      tags:
+        - Files
+      summary: Upload file
+      operationId: Files_uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload
+                description:
+                  type: string
+                  description: File description
+                category:
+                  type: string
+                  description: File category
+                  enum:
+                    - document
+                    - image
+                    - video
+                    - other
+              required:
+                - file
+      responses:
+        '200':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:
+                    type: string
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                  uploaded_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid file or missing required fields
   /v2/whoami:
     get:
       tags:

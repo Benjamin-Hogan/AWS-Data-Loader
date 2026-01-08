@@ -246,6 +246,99 @@
           }
         }
       }
+    },
+    "/api/files/upload": {
+      "post": {
+        "summary": "Upload file",
+        "operationId": "uploadFile",
+        "tags": ["files"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "File to upload"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "File description"
+                  },
+                  "category": {
+                    "type": "string",
+                    "description": "File category",
+                    "enum": ["document", "image", "video", "other"]
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "file_id": {"type": "string"},
+                    "filename": {"type": "string"},
+                    "size": {"type": "integer"},
+                    "uploaded_at": {"type": "string", "format": "date-time"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/upload-multiple": {
+      "post": {
+        "summary": "Upload multiple files",
+        "operationId": "uploadMultipleFiles",
+        "tags": ["files"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "description": "Multiple files to upload"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Title for the upload"
+                  },
+                  "tags": {
+                    "type": "string",
+                    "description": "Comma-separated tags"
+                  }
+                },
+                "required": ["files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Files uploaded successfully"
+          }
+        }
+      }
     }
   }
 }
