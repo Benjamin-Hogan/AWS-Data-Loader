@@ -849,7 +849,8 @@ Tasks will be executed sequentially with the configured delays."""
                     self.endpoints_scrollable,
                     path,
                     methods,
-                    self._on_endpoint_request
+                    self._on_endpoint_request,
+                    self._on_create_task
                 )
                 endpoint_frame.pack(fill=tk.X, padx=5, pady=2)
                 # Store reference with metadata for filtering
@@ -1068,6 +1069,76 @@ Tasks will be executed sequentially with the configured delays."""
         except Exception as e:
             self._set_status(f"Request failed: {str(e)}", "red")
             self.response_frame.display_error(str(e))
+    
+    def _on_create_task(self, method: str, path: str, params: Dict[str, Any], 
+                        headers: Dict[str, Any], body: Optional[str] = None,
+                        multipart_data: Optional[Dict[str, Any]] = None,
+                        multipart_files: Optional[Dict[str, Any]] = None):
+        """Create a task from the current request configuration."""
+        if not self.current_config:
+            messagebox.showwarning("No Configuration", "Please select a configuration first")
+            return
+        
+        # Create task data
+        task_data = {
+            'config_name': self.current_config.name,
+            'method': method.upper(),
+            'path': path,
+            'delay_before': 0.0,
+            'delay_after': 0.0
+        }
+        
+        # Add optional fields only if they have values
+        if params:
+            task_data['params'] = params
+        if headers:
+            task_data['headers'] = headers
+        if body:
+            task_data['body'] = body
+        if multipart_data:
+            task_data['multipart_data'] = multipart_data
+        if multipart_files:
+            task_data['multipart_files'] = multipart_files
+        
+        # Add task to the task editor
+        if hasattr(self, 'task_editor'):
+            # Get or create a default config in the task editor
+            if not self.task_editor.current_config_name:
+                # Create a default config name
+                default_config_name = f"Tasks from {self.current_config.name}"
+                if default_config_name not in self.task_editor.task_configs:
+                    self.task_editor.task_configs[default_config_name] = {'tasks': []}
+                self.task_editor.current_config_name = default_config_name
+                self.task_editor.current_tasks = []
+                self.task_editor._refresh_config_selector()
+                self.task_editor.config_selector_var.set(default_config_name)
+                self.task_editor._on_config_selected()
+            
+            # Add the task to current tasks
+            self.task_editor.current_tasks.append(task_data)
+            self.task_editor._refresh_task_list()
+            
+            # Update the config storage
+            self.task_editor.task_configs[self.task_editor.current_config_name] = {
+                'tasks': self.task_editor.current_tasks.copy()
+            }
+            
+            # Select the newly added task
+            self.task_editor.task_listbox.selection_clear(0, tk.END)
+            self.task_editor.task_listbox.selection_set(len(self.task_editor.current_tasks) - 1)
+            self.task_editor._on_task_selected()
+            
+            # Switch to Autonomous Loader tab
+            self.notebook.select(2)
+            
+            self._set_status(f"Task created: {method} {path}", "green")
+            messagebox.showinfo("Task Created", f"Task created successfully!\n\n{method} {path}\n\nSwitched to Autonomous Loader tab.")
+        else:
+            # Task editor not initialized yet, show message
+            messagebox.showinfo(
+                "Task Created", 
+                f"Task created:\n\n{method} {path}\n\nGo to 'Autonomous Loader' tab to view and manage tasks."
+            )
             
     def _filter_endpoints(self):
         """Filter endpoints based on search term."""

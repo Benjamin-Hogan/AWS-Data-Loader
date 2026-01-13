@@ -7,6 +7,7 @@ let currentEndpoints = {};
 let currentEndpoint = null;
 let currentMethod = null;
 let currentOpenApiSpec = null;
+let savedTasks = []; // Store created tasks
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
@@ -560,6 +561,17 @@ function setupEventListeners() {
     // Send request button
     document.getElementById('sendRequestBtn').addEventListener('click', sendRequest);
     
+    // Create task button
+    document.getElementById('createTaskBtn').addEventListener('click', createTaskFromCurrentRequest);
+    
+    // Task manager button (we'll add this to the top bar or make it accessible)
+    // For now, we'll open it from the create task action
+    
+    // Task manager modal buttons
+    document.getElementById('saveTasksBtn').addEventListener('click', saveTasksToFile);
+    document.getElementById('executeSavedTasksBtn').addEventListener('click', executeSavedTasks);
+    document.getElementById('clearTasksBtn').addEventListener('click', clearAllTasks);
+    
     // Load JSON button
     document.getElementById('loadJsonBtn').addEventListener('click', () => {
         const input = document.createElement('input');
@@ -680,6 +692,17 @@ function setupEventListeners() {
             return;
         }
         openModal('autonomousLoaderModal');
+    });
+    
+    // Task manager button
+    document.getElementById('taskManagerBtn').addEventListener('click', () => {
+        updateTasksList();
+        openModal('taskManagerModal');
+    });
+    
+    // Task manager modal close
+    document.getElementById('taskManagerModal').querySelector('.modal-close').addEventListener('click', (e) => {
+        closeModal(e.target.closest('.modal'));
     });
     
     // Modal close buttons
@@ -1109,6 +1132,186 @@ function showSuccess(message) {
 function showError(message) {
     console.error('Error:', message);
     alert('Error: ' + message);
+}
+
+// ==================== Task Management ====================
+
+function createTaskFromCurrentRequest() {
+    if (!currentConfig || !currentEndpoint || !currentMethod) {
+        showError('Please select a configuration and endpoint first');
+        return;
+    }
+    
+    const method = currentMethod.toUpperCase();
+    let path = currentEndpoint;
+    
+    // Collect parameters
+    const params = {};
+    const headers = {};
+    
+    document.querySelectorAll('.param-input').forEach(input => {
+        const value = input.value.trim();
+        if (value) {
+            const paramName = input.dataset.param;
+            const paramIn = input.dataset.in;
+            
+            if (paramIn === 'query') {
+                params[paramName] = value;
+            } else if (paramIn === 'header') {
+                headers[paramName] = value;
+            } else if (paramIn === 'path') {
+                // Replace path parameter in the path
+                path = path.replace(`{${paramName}}`, value);
+            }
+        }
+    });
+    
+    // Get request body
+    const bodyTextarea = document.getElementById('requestBody');
+    const body = bodyTextarea ? bodyTextarea.value.trim() : null;
+    
+    // Create task object
+    const task = {
+        config_name: currentConfig,
+        method: method,
+        path: path,
+        params: Object.keys(params).length > 0 ? params : undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        body: body || undefined,
+        delay_before: 0,
+        delay_after: 0
+    };
+    
+    // Remove undefined fields
+    Object.keys(task).forEach(key => {
+        if (task[key] === undefined) {
+            delete task[key];
+        }
+    });
+    
+    // Add to saved tasks
+    savedTasks.push(task);
+    
+    showSuccess(`Task created: ${method} ${path}`);
+    
+    // Optionally open task manager to show the new task
+    updateTasksList();
+    openModal('taskManagerModal');
+}
+
+function updateTasksList() {
+    const tasksList = document.getElementById('tasksList');
+    const taskCount = document.getElementById('taskCount');
+    
+    // Update task count
+    if (taskCount) {
+        taskCount.textContent = savedTasks.length;
+    }
+    
+    if (savedTasks.length === 0) {
+        tasksList.innerHTML = '<div class="empty-state">No tasks created yet. Use "Create Task" button to add tasks from API requests.</div>';
+        return;
+    }
+    
+    tasksList.innerHTML = savedTasks.map((task, index) => {
+        const paramsStr = task.params ? JSON.stringify(task.params) : 'None';
+        const headersStr = task.headers ? JSON.stringify(task.headers) : 'None';
+        const bodyPreview = task.body ? (task.body.length > 100 ? task.body.substring(0, 100) + '...' : task.body) : 'None';
+        
+        return `
+            <div class="task-item">
+                <div class="task-item-header">
+                    <div class="task-item-method">${task.method}</div>
+                    <div class="task-item-path">${task.path}</div>
+                    <button class="btn btn-danger btn-small" onclick="removeTask(${index})">Remove</button>
+                </div>
+                <div class="task-item-details">
+                    <div><strong>Config:</strong> ${task.config_name}</div>
+                    <div><strong>Params:</strong> ${paramsStr}</div>
+                    <div><strong>Headers:</strong> ${headersStr}</div>
+                    <div><strong>Body:</strong> ${bodyPreview}</div>
+                    ${task.delay_before > 0 ? `<div><strong>Delay Before:</strong> ${task.delay_before}s</div>` : ''}
+                    ${task.delay_after > 0 ? `<div><strong>Delay After:</strong> ${task.delay_after}s</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function removeTask(index) {
+    if (confirm(`Remove task ${index + 1}?`)) {
+        savedTasks.splice(index, 1);
+        updateTasksList();
+        showSuccess('Task removed');
+    }
+}
+
+function clearAllTasks() {
+    if (savedTasks.length === 0) {
+        showError('No tasks to clear');
+        return;
+    }
+    
+    if (confirm(`Clear all ${savedTasks.length} task(s)?`)) {
+        savedTasks = [];
+        updateTasksList();
+        showSuccess('All tasks cleared');
+    }
+}
+
+function saveTasksToFile() {
+    if (savedTasks.length === 0) {
+        showError('No tasks to save');
+        return;
+    }
+    
+    const tasksData = {
+        tasks: savedTasks
+    };
+    
+    const blob = new Blob([JSON.stringify(tasksData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tasks_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showSuccess(`Saved ${savedTasks.length} task(s) to file`);
+}
+
+async function executeSavedTasks() {
+    if (savedTasks.length === 0) {
+        showError('No tasks to execute');
+        return;
+    }
+    
+    if (!currentConfig) {
+        showError('Please select a configuration first');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/configs/${currentConfig}/tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: savedTasks })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            closeModal(document.getElementById('taskManagerModal'));
+            openModal('autonomousLoaderModal');
+            displayTaskResults(data);
+            showSuccess(`Executed ${data.total} task(s), ${data.successful} successful`);
+        } else {
+            showError(data.error || 'Failed to execute tasks');
+        }
+    } catch (error) {
+        showError('Failed to execute tasks: ' + error.message);
+    }
 }
 
 // Test API connection on load

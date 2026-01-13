@@ -561,6 +561,73 @@ body {
     font-size: 14px;
 }
 
+/* Task Management */
+.tasks-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.task-item {
+    padding: 15px;
+    margin-bottom: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.task-item-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.task-item-method {
+    padding: 4px 8px;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: center;
+}
+
+.task-item-path {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.task-item-details {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.task-item-details div {
+    margin-bottom: 4px;
+}
+
+.task-item-details strong {
+    color: var(--text-primary);
+    margin-right: 5px;
+}
+
+.task-results {
+    margin-top: 20px;
+}
+
+.task-results h3 {
+    font-size: 16px;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
     width: 8px;

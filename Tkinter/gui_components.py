@@ -74,12 +74,14 @@ class EndpointFrame(ttk.LabelFrame):
         parent,
         path: str,
         methods: Dict[str, Any],
-        on_request: Callable[[str, str, Dict[str, Any], Dict[str, str], Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None]
+        on_request: Callable[[str, str, Dict[str, Any], Dict[str, str], Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None],
+        on_create_task: Optional[Callable[[str, str, Dict[str, Any], Dict[str, str], Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None]] = None
     ):
         super().__init__(parent, text=f"Endpoint: {path}", padding=10)
         self.path = path
         self.methods = methods
         self.on_request = on_request
+        self.on_create_task = on_create_task
         
         # Initialize content type (will be set in _on_method_change)
         self.content_type = None
@@ -126,6 +128,15 @@ class EndpointFrame(ttk.LabelFrame):
             command=self._send_request
         )
         self.send_button.pack(side=tk.LEFT, padx=5)
+        
+        # Create Task button (if callback provided)
+        if self.on_create_task:
+            self.create_task_button = ttk.Button(
+                self.button_frame,
+                text="Create Task",
+                command=self._create_task
+            )
+            self.create_task_button.pack(side=tk.LEFT, padx=5)
         
         # Load JSON File button (will be added conditionally)
         self.load_json_button = None
@@ -469,6 +480,80 @@ class EndpointFrame(ttk.LabelFrame):
                     
         # Call the request handler
         self.on_request(method, path, params, headers, body, multipart_data, multipart_files)
+    
+    def _create_task(self):
+        """Create a task from the current request configuration."""
+        if not self.on_create_task:
+            return
+        
+        method = self.method_var.get()
+        if not method:
+            messagebox.showwarning("No Method", "Please select a method")
+            return
+        
+        # Collect parameters (same logic as _send_request)
+        params = {}
+        headers = {}
+        path = self.path  # Use a copy to avoid modifying the original
+        
+        for param_name, param_info in self.param_vars.items():
+            value = param_info['var'].get().strip()
+            if value:
+                param_in = param_info['in']
+                if param_in == 'query':
+                    params[param_name] = value
+                elif param_in == 'header':
+                    headers[param_name] = value
+                elif param_in == 'path':
+                    # Replace path parameters in the path
+                    path = path.replace(f'{{{param_name}}}', value)
+        
+        # Get request body or multipart data
+        body = None
+        multipart_data = None
+        multipart_files = None
+        
+        if self.content_type == 'multipart':
+            # Collect multipart form fields
+            multipart_data = {}
+            for field_info in self.multipart_data_vars.values():
+                name = field_info['name_var'].get().strip()
+                value = field_info['value_var'].get().strip()
+                if name and value:
+                    multipart_data[name] = value
+            
+            # Collect multipart files
+            multipart_files = {}
+            for file_info in self.multipart_files_vars.values():
+                name = file_info['name_var'].get().strip()
+                file_path = file_info['file_path_var'].get().strip()
+                if name and file_path:
+                    content_type = file_info['content_type_var'].get().strip()
+                    if content_type:
+                        multipart_files[name] = (file_path, content_type)
+                    else:
+                        multipart_files[name] = file_path
+        elif self.content_type == 'form-urlencoded':
+            # For form-urlencoded, we'll convert to multipart format for now
+            multipart_data = {}
+            for field_info in self.multipart_data_vars.values():
+                name = field_info['name_var'].get().strip()
+                value = field_info['value_var'].get().strip()
+                if name and value:
+                    multipart_data[name] = value
+        elif self.body_text:
+            body_content = self.body_text.get(1.0, tk.END).strip()
+            if body_content:
+                try:
+                    # Validate JSON
+                    json.loads(body_content)
+                    body = body_content
+                except json.JSONDecodeError:
+                    messagebox.showerror("Invalid JSON", "Request body contains invalid JSON")
+                    return
+        
+        # Call the create task handler
+        self.on_create_task(method, path, params, headers, body, multipart_data, multipart_files)
 
 
 class ResponseFrame(ttk.LabelFrame):
